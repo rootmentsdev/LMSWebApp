@@ -26,6 +26,7 @@ export const config = {
     
     // Module Endpoints
     GET_ALL_MODULES: '/api/modules',
+    GET_MODULE_BY_ID: '/api/modules/:id',
     
     // Progress and Completion (if available)
     UPDATE_TRAINING_PROGRESS: '/api/trainings/:trainingId/progress',

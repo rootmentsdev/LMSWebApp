@@ -1,1 +1,120 @@
+/* Video Modal Styles */
+.video-modal .modal-content {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
 
+.video-modal .modal-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px 12px 0 0;
+}
+
+.video-modal .modal-title {
+  color: white;
+  font-weight: 600;
+}
+
+.video-modal .modal-header .btn-close {
+  filter: invert(1);
+}
+
+.video-modal .modal-body {
+  padding: 1.5rem;
+}
+
+.video-modal iframe {
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Training Page Improvements */
+.training-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.training-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
+}
+
+.video-item {
+  transition: background-color 0.2s ease;
+}
+
+.video-item:hover {
+  background-color: #f8f9fa !important;
+}
+
+/* Progress Bar Improvements */
+.progress {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  border-radius: 10px;
+}
+
+/* Button Improvements */
+.btn {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Card Improvements */
+.card {
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Badge Improvements */
+.badge {
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* Tab Improvements */
+.btn-link {
+  border-radius: 0;
+  transition: all 0.2s ease;
+}
+
+.btn-link:hover {
+  background-color: #f8f9fa;
+}
+
+/* Loading Spinner */
+.spinner-border {
+  color: #667eea;
+}
+
+/* Clean Background */
+.bg-white {
+  background-color: #ffffff !important;
+}
+
+/* Text Colors */
+.text-dark {
+  color: #2d3748 !important;
+}
+
+.text-muted {
+  color: #718096 !important;
+}
+
+/* Shadow Improvements */
+.shadow-sm {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+}
