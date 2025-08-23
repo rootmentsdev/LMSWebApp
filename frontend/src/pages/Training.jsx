@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Container, 
   Row, 
@@ -16,7 +17,9 @@ import {
   PlayFill, 
   CheckCircleFill, 
   LockFill,
-  X
+  X,
+  JournalText,
+  ArrowLeft
 } from 'react-bootstrap-icons';
 import { 
   getUserAssignedTrainings, 
@@ -31,9 +34,10 @@ import {
   getModuleVideoUrls
 } from '../api';
 import VideoPlayer from '../components/VideoPlayer';
-import ProgressTracker from '../components/ProgressTracker';
+
 
 const Training = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('assigned');
   const [assignedTrainings, setAssignedTrainings] = useState([]);
   const [mandatoryTrainings, setMandatoryTrainings] = useState([]);
@@ -45,8 +49,10 @@ const Training = () => {
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [userProgress, setUserProgress] = useState({});
-  const [currentUserId] = useState('user123'); // In real app, get from auth context
-  const [inlineVideo, setInlineVideo] = useState(null); // New state for inline video display
+  const [currentUserId] = useState('user123');
+  const [inlineVideo, setInlineVideo] = useState(null);
+  const [selectedTraining, setSelectedTraining] = useState(null);
+  const [showModulesView, setShowModulesView] = useState(false);
 
   useEffect(() => {
     fetchUserTrainings();
@@ -106,7 +112,6 @@ const Training = () => {
       
       console.log('🔍 Fetching trainings...');
       
-      // Fetch both assigned and mandatory trainings
       const [assignedData, mandatoryData] = await Promise.all([
         getUserAssignedTrainings(),
         getUserMandatoryTrainings()
@@ -115,14 +120,12 @@ const Training = () => {
       console.log('📚 Raw assigned trainings:', assignedData);
       console.log('📚 Raw mandatory trainings:', mandatoryData);
       
-      // Transform the data to match frontend expectations
       const transformedAssigned = assignedData.map(transformTrainingData);
       const transformedMandatory = mandatoryData.map(transformTrainingData);
       
       console.log('🔄 Transformed assigned trainings:', transformedAssigned);
       console.log('🔄 Transformed mandatory trainings:', transformedMandatory);
       
-      // Fetch full module details for each training
       try {
         const enhancedAssigned = await Promise.all(
           transformedAssigned.map(training => getTrainingWithModules(training))
@@ -139,7 +142,6 @@ const Training = () => {
         setMandatoryTrainings(enhancedMandatory || []);
       } catch (enhancementError) {
         console.error('❌ Error enhancing trainings:', enhancementError);
-        // Use transformed data without enhancement if enhancement fails
         setAssignedTrainings(transformedAssigned || []);
         setMandatoryTrainings(transformedMandatory || []);
         setDebugInfo('Videos may not display due to enhancement error. Check console for details.');
@@ -154,7 +156,6 @@ const Training = () => {
       setApiStatus('failed');
       setDebugInfo(`Error: ${err.message}`);
       
-      // Set empty arrays to prevent blank screen
       setAssignedTrainings([]);
       setMandatoryTrainings([]);
     } finally {
@@ -164,15 +165,6 @@ const Training = () => {
 
   const handleStartVideo = async (video) => {
     console.log('🎬 Starting video with object:', video);
-    console.log('🎬 Video properties:', {
-      _id: video._id,
-      title: video.title,
-      videoUri: video.videoUri,
-      url: video.url,
-      moduleName: video.moduleName,
-      hasVideoUri: !!video.videoUri,
-      hasUrl: !!video.url
-    });
     
     if (!video) {
       console.error('❌ Invalid video object:', video);
@@ -182,7 +174,10 @@ const Training = () => {
     
     if (video.videoUri) {
       console.log('✅ Video has URL, opening modal:', video.videoUri);
-      setSelectedVideo(video);
+      setSelectedVideo({
+        ...video,
+        trainingId: selectedTraining?._id || selectedTraining?.id
+      });
       setShowVideoModal(true);
     } else {
       console.error('❌ No video URL available for:', video._id);
@@ -195,22 +190,49 @@ const Training = () => {
     setSelectedVideo(null);
   };
 
-  // Handle video completion for progress tracking
   const handleVideoComplete = (video, moduleIndex, videoIndex) => {
     console.log('🎯 Video completed:', video, 'Module:', moduleIndex, 'Video:', videoIndex);
     
-    // Update user progress
-    const newProgress = {
-      ...userProgress,
-      completedVideos: [...(userProgress.completedVideos || []), video._id],
-      lastCompletedVideo: video._id,
-      lastCompletedAt: new Date().toISOString()
-    };
+    // Get the current training context (we need to find which training this video belongs to)
+    let currentTraining = null;
+    if (inlineVideo && inlineVideo.trainingId) {
+      currentTraining = inlineVideo.trainingId;
+    } else if (selectedVideo && selectedVideo.trainingId) {
+      currentTraining = selectedVideo.trainingId;
+    }
     
-    setUserProgress(newProgress);
-    
-    // Save to localStorage
-    localStorage.setItem(`userProgress_${currentUserId}`, JSON.stringify(newProgress));
+    if (currentTraining) {
+      // Create training-specific progress tracking
+      const trainingProgressKey = `training_${currentTraining}`;
+      const currentTrainingProgress = userProgress[trainingProgressKey] || {};
+      
+      const newTrainingProgress = {
+        ...currentTrainingProgress,
+        completedVideos: [...(currentTrainingProgress.completedVideos || []), video._id],
+        lastCompletedVideo: video._id,
+        lastCompletedAt: new Date().toISOString()
+      };
+      
+      const newProgress = {
+        ...userProgress,
+        [trainingProgressKey]: newTrainingProgress,
+        lastCompletedVideo: video._id,
+        lastCompletedAt: new Date().toISOString()
+      };
+      
+      setUserProgress(newProgress);
+      localStorage.setItem(`userProgress_${currentUserId}`, JSON.stringify(newProgress));
+    } else {
+      // Fallback to global progress if no training context
+      const newProgress = {
+        ...userProgress,
+        completedVideos: [...(userProgress.completedVideos || []), video._id],
+        lastCompletedAt: new Date().toISOString()
+      };
+      
+      setUserProgress(newProgress);
+      localStorage.setItem(`userProgress_${currentUserId}`, JSON.stringify(newProgress));
+    }
     
     // Show success message
     alert(`🎉 Congratulations! You've completed "${video.title}"`);
@@ -219,29 +241,40 @@ const Training = () => {
     handleCloseVideoModal();
   };
 
-  // Handle inline video display
   const handleInlineVideo = (video, moduleIndex, videoIndex) => {
     console.log('🎬 Playing inline video:', video);
-    setInlineVideo({
-      ...video,
+    console.log('🎬 Video details:', {
+      title: video.title,
+      videoUri: video.videoUri,
+      url: video.url,
+      _id: video._id,
       moduleIndex,
       videoIndex
     });
-    // Close modal if open
+    
+    // Check if video has a valid URL
+    if (!video.videoUri && !video.url) {
+      setError('No video URL available. Please check the video configuration.');
+      return;
+    }
+    
+    setInlineVideo({
+      ...video,
+      moduleIndex,
+      videoIndex,
+      trainingId: selectedTraining?._id || selectedTraining?.id
+    });
     setShowVideoModal(false);
     setSelectedVideo(null);
   };
 
-  // Close inline video
   const closeInlineVideo = () => {
     setInlineVideo(null);
   };
 
-  // Process video URL for YouTube embedding
   const processVideoUrl = (url) => {
     if (!url) return null;
     
-    // Handle YouTube URLs
     if (url.includes('youtube.com') || url.includes('youtu.be')) {
       let videoId = '';
       if (url.includes('youtube.com/watch?v=')) {
@@ -250,7 +283,11 @@ const Training = () => {
         videoId = url.split('youtu.be/')[1];
       }
       
-      // Remove any additional parameters
+      // Fix: videoId is an array, we need the first element
+      if (Array.isArray(videoId)) {
+        videoId = videoId[0];
+      }
+      
       if (videoId.includes('&')) {
         videoId = videoId.split('&')[0];
       }
@@ -261,7 +298,6 @@ const Training = () => {
       return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&controls=1`;
     }
     
-    // Handle direct video files
     if (url.match(/\.(mp4|webm|ogg|mov|avi)$/i)) {
       return url;
     }
@@ -269,7 +305,6 @@ const Training = () => {
     return url;
   };
 
-  // Handle module completion
   const handleModuleComplete = (moduleId, moduleIndex) => {
     console.log('🏆 Module completed:', moduleId, 'Index:', moduleIndex);
     
@@ -286,25 +321,25 @@ const Training = () => {
     alert(`🎊 Module completed! You can now access the next module.`);
   };
 
-  // Check if video is unlocked based on progress
   const isVideoUnlocked = (moduleIndex, videoIndex, training) => {
-    if (videoIndex === 0) return true; // First video is always unlocked
+    if (videoIndex === 0) return true;
     
     if (!training || !training.moduleDetails || !training.moduleDetails[moduleIndex]) return false;
     
     const module = training.moduleDetails[moduleIndex];
     if (!module.videos || videoIndex === 0) return true;
     
-    // Check if previous video is completed
     const previousVideo = module.videos[videoIndex - 1];
     if (!previousVideo) return false;
     
-    return userProgress.completedVideos?.includes(previousVideo._id) || false;
+    // Use training-specific progress
+    const trainingProgressKey = `training_${training._id || training.id}`;
+    const trainingProgress = userProgress[trainingProgressKey] || {};
+    return trainingProgress.completedVideos?.includes(previousVideo._id) || false;
   };
 
-  // Check if module is unlocked
   const isModuleUnlocked = (moduleIndex, training) => {
-    if (moduleIndex === 0) return true; // First module is always unlocked
+    if (moduleIndex === 0) return true;
     
     if (!training || !training.moduleDetails || !training.moduleDetails[moduleIndex - 1]) return false;
     
@@ -312,15 +347,19 @@ const Training = () => {
     if (!previousModule.videos) return false;
     
     // Check if all videos in previous module are completed
+    // Use training-specific progress
+    const trainingProgressKey = `training_${training._id || training.id}`;
+    const trainingProgress = userProgress[trainingProgressKey] || {};
     return previousModule.videos.every(video => 
-      userProgress.completedVideos?.includes(video._id)
+      trainingProgress.completedVideos?.includes(video._id)
     );
   };
 
   const handleStartTraining = async (training) => {
     try {
       console.log('Starting training:', training.title);
-      // You can implement navigation to training content here
+      setSelectedTraining(training);
+      setShowModulesView(true);
     } catch (error) {
       console.error('Error starting training:', error);
     }
@@ -385,10 +424,15 @@ const Training = () => {
     return new Date(dateString).toLocaleDateString();
   };
 
+  const handleBackToTrainings = () => {
+    setShowModulesView(false);
+    setSelectedTraining(null);
+  };
+
   if (loading) {
     return (
-      <div className="d-flex flex-column justify-content-center align-items-center" style={{ height: '100vh', backgroundColor: 'white' }}>
-        <Spinner animation="border" role="status" className="mb-3">
+      <div className="d-flex flex-column justify-content-center align-items-center vh-100 bg-light">
+        <Spinner animation="border" role="status" className="mb-3" style={{ color: '#20c997' }}>
           <span className="visually-hidden">Loading...</span>
         </Spinner>
         <p className="text-muted">Fetching your trainings...</p>
@@ -396,232 +440,377 @@ const Training = () => {
     );
   }
 
-  // Fallback UI if no trainings and no error
+  // Show module details view when training is selected
+  if (showModulesView && selectedTraining) {
+    return (
+      <div className="bg-light min-vh-100">
+        {/* Header */}
+        <div className="bg-white shadow-sm">
+          <Container fluid>
+            <div className="d-flex align-items-center py-3">
+              <Button 
+                variant="link" 
+                className="text-decoration-none p-0 me-3"
+                onClick={handleBackToTrainings}
+              >
+                <ArrowLeft size={24} />
+              </Button>
+              <div>
+                <h5 className="mb-0 fw-bold">{selectedTraining.title}</h5>
+                <small className="text-muted">Training Modules</small>
+              </div>
+            </div>
+          </Container>
+        </div>
+
+        {/* Module Cards */}
+        <Container className="py-4">
+          <Row className="g-4">
+            {selectedTraining.moduleDetails && selectedTraining.moduleDetails.map((module, moduleIndex) => {
+              const moduleUnlocked = isModuleUnlocked(moduleIndex, selectedTraining);
+                                            const completedVideos = module.videos ? module.videos.filter(video => {
+                                // Use training-specific progress
+                                const trainingProgressKey = `training_${selectedTraining._id || selectedTraining.id}`;
+                                const trainingProgress = userProgress[trainingProgressKey] || {};
+                                return trainingProgress.completedVideos?.includes(video._id);
+                              }).length : 0;
+              const totalVideos = module.videos ? module.videos.length : 0;
+              const moduleProgress = totalVideos > 0 ? (completedVideos / totalVideos) * 100 : 0;
+
+              return (
+                <Col key={`module-${moduleIndex}`} xs={12}>
+                  <Card className={`h-100 border-0 shadow-sm ${!moduleUnlocked ? 'opacity-75' : ''}`}>
+                    <Card.Body className="p-4">
+                      {/* Module Header */}
+                      <div className="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                          <h6 className="fw-bold mb-1">
+                            Module {String(moduleIndex + 1).padStart(2, '0')}
+                          </h6>
+                          <p className="text-muted small mb-0">
+                            {module.title || `Module ${moduleIndex + 1}`}
+                          </p>
+                          {module.description && (
+                            <p className="text-muted small mt-1 mb-0">{module.description}</p>
+                          )}
+                        </div>
+                        <div className="text-end">
+                          <Badge 
+                            bg={moduleProgress === 100 ? 'success' : moduleProgress > 0 ? 'warning' : 'secondary'}
+                            className="mb-2"
+                          >
+                            {moduleProgress === 100 ? 'Completed' : moduleUnlocked ? `${Math.round(moduleProgress)}%` : 'Locked'}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="mb-3">
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <small className="text-muted">Progress</small>
+                          <small className="fw-bold">{Math.round(moduleProgress)}% Completed</small>
+                        </div>
+                        <ProgressBar 
+                          now={moduleProgress} 
+                          className="mb-2"
+                          style={{ height: '6px' }}
+                          variant={moduleProgress === 100 ? 'success' : moduleProgress > 0 ? 'info' : 'secondary'}
+                        />
+                      </div>
+
+                      {/* Module Content */}
+                      {moduleUnlocked ? (
+                        <>
+                          {/* Topic List */}
+                          {module.videos && module.videos.length > 0 && (
+                            <div className="mb-3">
+                              <h6 className="fw-semibold mb-2 small text-uppercase text-muted">
+                                Topics ({totalVideos})
+                              </h6>
+                              <div className="d-grid gap-2">
+                                {module.videos.map((video, videoIndex) => {
+                                  const videoUnlocked = isVideoUnlocked(moduleIndex, videoIndex, selectedTraining);
+                                  const isVideoCompleted = (() => {
+                                    // Use training-specific progress
+                                    const trainingProgressKey = `training_${selectedTraining._id || selectedTraining.id}`;
+                                    const trainingProgress = userProgress[trainingProgressKey] || {};
+                                    return trainingProgress.completedVideos?.includes(video._id);
+                                  })();
+
+                                  return (
+                                    <Card key={`topic-${videoIndex}`} className="border">
+                                      <Card.Body className="p-3">
+                                        <div className="d-flex justify-content-between align-items-center">
+                                          <div className="flex-grow-1">
+                                            <h6 className="mb-1 fw-semibold">
+                                              {video.title || `Topic ${videoIndex + 1}`}
+                                            </h6>
+                                            <small className="text-muted">
+                                              Duration: {video.duration || '15'} min
+                                            </small>
+                                          </div>
+                                          <div>
+                                            {isVideoCompleted ? (
+                                              <Badge bg="success">
+                                                <CheckCircleFill className="me-1" />
+                                                Resume
+                                              </Badge>
+                                            ) : videoUnlocked ? (
+                                              <Button 
+                                                variant="success"
+                                                size="sm"
+                                                onClick={() => handleInlineVideo(video, moduleIndex, videoIndex)}
+                                              >
+                                                Watch Now
+                                              </Button>
+                                            ) : (
+                                              <Badge bg="secondary">
+                                                <LockFill className="me-1" />
+                                                Locked
+                                              </Badge>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </Card.Body>
+                                    </Card>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Action Buttons */}
+                          <div className="mt-4 d-flex gap-2">
+                            <Button 
+                              variant={moduleProgress > 0 ? 'outline-success' : 'success'}
+                              className="flex-grow-1"
+                              onClick={() => {
+                                if (module.videos && module.videos.length > 0) {
+                                  const firstUncompletedVideo = module.videos.find(video => 
+                                    !userProgress.completedVideos?.includes(video._id)
+                                  );
+                                  if (firstUncompletedVideo) {
+                                    handleInlineVideo(firstUncompletedVideo, moduleIndex, 0);
+                                  }
+                                }
+                              }}
+                            >
+                              {moduleProgress > 0 ? 'Continue Training' : 'Start Training'}
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center py-4">
+                          <LockFill size={32} className="text-muted mb-2" />
+                          <p className="text-muted mb-0">
+                            Complete the previous module to unlock this content
+                          </p>
+                        </div>
+                      )}
+                    </Card.Body>
+                  </Card>
+                </Col>
+              );
+            })}
+          </Row>
+        </Container>
+
+        {/* Inline Video Player */}
+        {inlineVideo && (
+          <div className="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex align-items-center justify-content-center" style={{ zIndex: 1050 }}>
+            <div className="bg-white rounded shadow" style={{ width: '90%', maxWidth: '800px' }}>
+                             <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
+                 <h5 className="mb-0">🎬 {inlineVideo.title || 'Video'}</h5>
+                 <Button 
+                   variant="light" 
+                   size="sm" 
+                   onClick={closeInlineVideo}
+                 >
+                   <X />
+                 </Button>
+               </div>
+               {/* Debug Info */}
+               <div className="px-3 py-2 bg-light border-bottom small">
+                 <div className="row">
+                   <div className="col-md-6">
+                     <strong>Video URI:</strong> {inlineVideo.videoUri || 'Not available'}
+                   </div>
+                   <div className="col-md-6">
+                     <strong>URL:</strong> {inlineVideo.url || 'Not available'}
+                   </div>
+                 </div>
+                 <div className="row mt-1">
+                   <div className="col-md-6">
+                     <strong>Module:</strong> {inlineVideo.moduleIndex + 1}
+                   </div>
+                   <div className="col-md-6">
+                     <strong>Video:</strong> {inlineVideo.videoIndex + 1}
+                   </div>
+                 </div>
+               </div>
+                             <div className="ratio ratio-16x9">
+                 {inlineVideo.videoUri && (
+                   inlineVideo.videoUri.includes('youtube.com') || inlineVideo.videoUri.includes('youtu.be') ? (
+                     <iframe
+                       src={processVideoUrl(inlineVideo.videoUri)}
+                       title={inlineVideo.title || 'Video'}
+                       frameBorder="0"
+                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                       allowFullScreen
+                       style={{ border: 'none' }}
+                       onError={(e) => {
+                         console.error('YouTube iframe error:', e);
+                         setError('Failed to load YouTube video. Please check the URL.');
+                       }}
+                     />
+                   ) : (
+                     <video
+                       controls
+                       autoPlay
+                       className="w-100 h-100"
+                       style={{ objectFit: 'contain' }}
+                       onError={(e) => {
+                         console.error('Video playback error:', e);
+                         setError('Failed to load video. Please check the video file.');
+                       }}
+                     >
+                       <source src={inlineVideo.videoUri} type="video/mp4" />
+                       <source src={inlineVideo.videoUri} type="video/webm" />
+                       <source src={inlineVideo.videoUri} type="video/ogg" />
+                       Your browser does not support the video tag.
+                     </video>
+                   )
+                 )}
+                 {!inlineVideo.videoUri && (
+                   <div className="d-flex align-items-center justify-content-center bg-light">
+                     <div className="text-center p-4">
+                       <div className="text-muted mb-2">🎬</div>
+                       <p className="text-muted mb-0">Video URL not available</p>
+                       <small className="text-muted">Please check with your administrator</small>
+                       <div className="mt-2">
+                         <Button 
+                           variant="outline-primary" 
+                           size="sm"
+                           onClick={() => {
+                             console.log('Video debug info:', inlineVideo);
+                             alert(`Video Debug Info:\nTitle: ${inlineVideo.title}\nURI: ${inlineVideo.videoUri}\nURL: ${inlineVideo.url}`);
+                           }}
+                         >
+                           Debug Info
+                         </Button>
+                       </div>
+                     </div>
+                   </div>
+                 )}
+               </div>
+              <div className="p-3 border-top">
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <small className="text-muted">
+                      Module {inlineVideo.moduleIndex + 1}, Video {inlineVideo.videoIndex + 1}
+                    </small>
+                  </div>
+                                     <div className="d-flex align-items-center gap-2">
+                     <Button 
+                       variant="success" 
+                       size="sm"
+                       onClick={() => {
+                         handleVideoComplete(inlineVideo, inlineVideo.moduleIndex, inlineVideo.videoIndex);
+                         closeInlineVideo();
+                       }}
+                     >
+                       <CheckCircleFill className="me-1" />
+                       Mark Complete
+                     </Button>
+                     <small className="text-muted">
+                       ⚠️ Make sure you've watched the video before marking as complete
+                     </small>
+                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Main training list view
   if (!loading && assignedTrainings.length === 0 && mandatoryTrainings.length === 0 && !error) {
     return (
-      <div className="bg-white text-dark min-vh-100">
-        <div className="d-flex align-items-center p-4 border-bottom bg-white">
-          <h4 className="mb-0 fw-bold text-dark">My Trainings</h4>
+      <div className="bg-light min-vh-100">
+        <div className="bg-white shadow-sm">
+          <Container fluid>
+            <div className="py-3">
+              <h4 className="mb-0 fw-bold">Trainings</h4>
+            </div>
+          </Container>
         </div>
-        <div className="p-4 text-center">
+        <Container className="py-4 text-center">
           <div className="mb-4">
             <h5 className="text-muted">No Trainings Found</h5>
             <p className="text-muted">It looks like no trainings have been assigned to you yet.</p>
           </div>
-          <div className="mb-4 p-3 bg-light border rounded">
-            <h6 className="fw-bold mb-2">🔧 Debug & Testing</h6>
-            <div className="row g-2 align-items-center">
-              <div className="col-md-4">
-                <Form.Control
-                  type="text"
-                  value={testUserId}
-                  onChange={(e) => setTestUserId(e.target.value)}
-                  placeholder="Test User ID"
-                  size="sm"
-                />
-              </div>
-              <div className="col-md-8 d-flex gap-2">
-                <Button variant="outline-secondary" size="sm" onClick={() => fetchUserTrainings()}>
-                  Test User
-                </Button>
-                <Button variant="outline-info" size="sm" onClick={testAllEndpoints}>
-                  Test Endpoints
-                </Button>
-                <Button variant="outline-warning" size="sm" onClick={async () => {
-                  setDebugInfo('Testing module endpoint...');
-                  const result = await testModuleEndpoint();
-                  setDebugInfo(`Module test: ${result ? 'Success' : 'Failed'}`);
-                }}>
-                  Test Modules
-                </Button>
-              </div>
-            </div>
-            {debugInfo && (
-              <div className="mt-2 small text-muted">
-                <strong>Debug:</strong> {debugInfo}
-              </div>
-            )}
-          </div>
           <Button variant="primary" onClick={fetchUserTrainings} disabled={loading}>
             {loading ? 'Refreshing...' : 'Refresh Trainings'}
           </Button>
-        </div>
+        </Container>
       </div>
     );
   }
 
   return (
-    <div className="bg-white text-dark min-vh-100">
+    <div className="bg-light min-vh-100">
       {/* Header */}
-      <div className="d-flex align-items-center p-4 border-bottom bg-white">
-        <h4 className="mb-0 fw-bold text-dark">My Trainings</h4>
+      <div className="bg-white shadow-sm">
+        <Container fluid>
+          <div className="py-3">
+            <h4 className="mb-0 fw-bold">Trainings</h4>
+          </div>
+        </Container>
       </div>
 
       {/* Tabs */}
-      <div className="d-flex border-bottom bg-white">
-        <Button
-          variant="link"
-          className={`text-decoration-none flex-fill py-3 ${
-            activeTab === 'assigned' ? 'border-bottom border-primary border-3 fw-bold text-primary' : 'text-muted'
-          }`}
-          onClick={() => setActiveTab('assigned')}
-        >
-          Assigned ({assignedTrainings.length})
-        </Button>
-        <Button
-          variant="link"
-          className={`text-decoration-none flex-fill py-3 ${
-            activeTab === 'mandatory' ? 'border-bottom border-primary border-3 fw-bold text-primary' : 'text-muted'
-          }`}
-          onClick={() => setActiveTab('mandatory')}
-        >
-          Mandatory ({mandatoryTrainings.length})
-        </Button>
+      <div className="bg-white border-bottom">
+        <Container fluid>
+          <div className="d-flex">
+            <Button
+              variant="link"
+              className={`text-decoration-none flex-fill py-3 border-0 ${
+                activeTab === 'assigned' ? 'border-bottom border-success border-3 fw-bold text-success' : 'text-muted'
+              }`}
+              onClick={() => setActiveTab('assigned')}
+            >
+              Assigned ({assignedTrainings.length})
+            </Button>
+            <Button
+              variant="link"
+              className={`text-decoration-none flex-fill py-3 border-0 ${
+                activeTab === 'mandatory' ? 'border-bottom border-success border-3 fw-bold text-success' : 'text-muted'
+              }`}
+              onClick={() => setActiveTab('mandatory')}
+            >
+              Mandatory ({mandatoryTrainings.length})
+            </Button>
+          </div>
+        </Container>
       </div>
 
       {/* Content */}
-      <div className="p-4 bg-white">
-        {/* Debug Interface - Simplified */}
-        <div className="mb-4 p-3 bg-light border rounded">
-          <div className="row g-2 align-items-center">
-            <div className="col-md-4">
-              <Form.Control
-                type="text"
-                value={testUserId}
-                onChange={(e) => setTestUserId(e.target.value)}
-                placeholder="Test User ID"
-                size="sm"
-              />
-            </div>
-            <div className="col-md-8 d-flex gap-2">
-              <Button variant="outline-secondary" size="sm" onClick={() => fetchUserTrainings()}>
-                Test User
-              </Button>
-              <Button variant="outline-info" size="sm" onClick={testAllEndpoints}>
-                Test Endpoints
-              </Button>
-              <Button variant="outline-warning" size="sm" onClick={async () => {
-                setDebugInfo('Testing module endpoint...');
-                const result = await testModuleEndpoint();
-                setDebugInfo(`Module test: ${result ? 'Success' : 'Failed'}`);
-              }}>
-                Test Modules
-              </Button>
-            </div>
-          </div>
-          {debugInfo && (
-            <div className="mt-2 small text-muted">
-              <strong>Debug:</strong> {debugInfo}
-            </div>
-          )}
-        </div>
-
-        {/* API Status */}
-        <div className="mb-4 p-3 bg-light border rounded">
-          <div className="d-flex justify-content-between align-items-center">
-            <span className="fw-bold">Connection Status</span>
-            <Button variant="outline-info" size="sm" onClick={testConnection}>
-              {apiStatus === 'testing' ? 'Testing...' : 'Refresh'}
-            </Button>
-          </div>
-          <div className="d-flex align-items-center mt-2">
-            <div 
-              className={`me-2 rounded-circle ${
-                apiStatus === 'connected' ? 'bg-success' : 
-                apiStatus === 'failed' ? 'bg-danger' : 'bg-secondary'
-              }`} 
-              style={{ width: '12px', height: '12px' }}
-            ></div>
-            <small className="text-muted">
-              {apiStatus === 'connected' ? 'Connected to LMS' : 
-               apiStatus === 'failed' ? 'Connection Failed' : 'Checking...'}
-            </small>
-          </div>
-        </div>
-
+      <Container className="py-4">
         {error && (
           <Alert variant="danger" dismissible onClose={() => setError('')} className="mb-4">
             <strong>Error:</strong> {error}
           </Alert>
         )}
 
-        {/* Inline Video Player */}
-        {inlineVideo && (
-          <div className="mb-4">
-            <Card className="border-0 shadow">
-              <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
-                <h5 className="mb-0">
-                  🎬 Now Playing: {inlineVideo.title || 'Video'}
-                </h5>
-                <Button 
-                  variant="light" 
-                  size="sm" 
-                  onClick={closeInlineVideo}
-                  className="text-dark"
-                >
-                  <X />
-                </Button>
-              </Card.Header>
-              <Card.Body className="p-0">
-                <div className="ratio ratio-16x9">
-                  {inlineVideo.videoUri && (
-                    inlineVideo.videoUri.includes('youtube.com') || inlineVideo.videoUri.includes('youtu.be') ? (
-                      <iframe
-                        src={processVideoUrl(inlineVideo.videoUri)}
-                        title={inlineVideo.title || 'Video'}
-                        frameBorder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowFullScreen
-                        style={{ border: 'none' }}
-                      />
-                    ) : (
-                      <video
-                        controls
-                        autoPlay
-                        className="w-100 h-100"
-                        style={{ objectFit: 'contain' }}
-                      >
-                        <source src={inlineVideo.videoUri} type="video/mp4" />
-                        <source src={inlineVideo.videoUri} type="video/webm" />
-                        <source src={inlineVideo.videoUri} type="video/ogg" />
-                        Your browser does not support the video tag.
-                      </video>
-                    )
-                  )}
-                </div>
-                <div className="p-3">
-                  <div className="d-flex justify-content-between align-items-center">
-                    <div>
-                      <h6 className="mb-1">{inlineVideo.title || 'Video'}</h6>
-                      <small className="text-muted">
-                        Module {inlineVideo.moduleIndex + 1}, Video {inlineVideo.videoIndex + 1}
-                      </small>
-                    </div>
-                    <Button 
-                      variant="success" 
-                      size="sm"
-                      onClick={() => {
-                        handleVideoComplete(inlineVideo, inlineVideo.moduleIndex, inlineVideo.videoIndex);
-                        closeInlineVideo();
-                      }}
-                    >
-                      <CheckCircleFill className="me-1" />
-                      Mark Complete
-                    </Button>
-                  </div>
-                </div>
-              </Card.Body>
-            </Card>
-          </div>
-        )}
-
         {/* Pending Trainings */}
         <div className="mb-4">
-          <h5 className="fw-bold mb-3 text-dark">
+          <h5 className="fw-bold mb-3">
             Pending Trainings ({getPendingTrainings().length})
           </h5>
           {getPendingTrainings().length === 0 ? (
-            <Alert variant="info">
+            <Alert variant="info" className="text-center">
               <p className="mb-0">No pending trainings found.</p>
               <small>
                 {getCurrentTrainings().length === 0 
@@ -631,29 +820,33 @@ const Training = () => {
               </small>
             </Alert>
           ) : (
-            <Row>
+            <Row className="g-4">
               {getPendingTrainings().map((training, trainingIndex) => {
                 const deadlineStatus = getDeadlineStatus(training.deadline);
                 const uniqueTrainingId = training.id || training._id || `training-${trainingIndex}`;
+                
                 return (
-                  <Col key={`training-${uniqueTrainingId}-${trainingIndex}`} lg={6} className="mb-3">
+                  <Col key={`training-${uniqueTrainingId}-${trainingIndex}`} xs={12} className="mb-3">
                     <Card className="h-100 border-0 shadow-sm">
                       <Card.Body className="p-4">
+                        {/* Training Header */}
                         <div className="d-flex justify-content-between align-items-start mb-3">
-                          <h6 className="fw-bold text-dark mb-1">{training.title}</h6>
-                          <Badge bg={deadlineStatus.color} className="fs-6">
+                          <div>
+                            <h6 className="fw-bold mb-1">{training.title}</h6>
+                            {training.description && (
+                              <p className="text-muted small mb-0">{training.description}</p>
+                            )}
+                          </div>
+                          <Badge bg={deadlineStatus.color} className="ms-2">
                             {deadlineStatus.text}
                           </Badge>
                         </div>
                         
-                        {training.description && (
-                          <p className="text-muted small mb-3">{training.description}</p>
-                        )}
-                        
+                        {/* Progress */}
                         <div className="mb-3">
                           <div className="d-flex justify-content-between align-items-center mb-1">
-                            <small className="text-muted">Progress</small>
-                            <small className="fw-bold">{training.progress}%</small>
+                            <small className="text-muted">Complete each training module and its assessment to test your understanding. Go to track!</small>
+                            <small className="fw-bold">{training.progress}% Completed</small>
                           </div>
                           <ProgressBar 
                             now={training.progress} 
@@ -663,211 +856,12 @@ const Training = () => {
                           />
                         </div>
 
-                        {/* Videos Section - With Sequential Unlocking */}
-                        {training.moduleDetails && training.moduleDetails.length > 0 ? (
-                          <div className="mb-3">
-                            <h6 className="fw-bold mb-2 text-dark">📹 Learning Modules ({training.moduleDetails.length})</h6>
-                            
-                            {training.moduleDetails.map((module, moduleIndex) => {
-                              const moduleUnlocked = isModuleUnlocked(moduleIndex, training);
-                              
-                              return (
-                                <Card key={`module-${uniqueTrainingId}-${moduleIndex}-${module._id || moduleIndex}`} className={`mb-3 ${!moduleUnlocked ? 'opacity-50' : ''}`}>
-                                  <Card.Header className={`d-flex justify-content-between align-items-center ${
-                                    moduleUnlocked ? 'bg-primary text-white' : 'bg-secondary text-white'
-                                  }`}>
-                                    <div className="d-flex align-items-center">
-                                      {moduleUnlocked ? (
-                                        <PlayFill className="me-2" />
-                                      ) : (
-                                        <LockFill className="me-2" />
-                                      )}
-                                      <span className="fw-bold">
-                                        {module.title || `Module ${moduleIndex + 1}`}
-                                      </span>
-                                    </div>
-                                    <Badge bg={moduleUnlocked ? 'light' : 'secondary'}>
-                                      {moduleUnlocked ? 'Unlocked' : 'Locked'}
-                                    </Badge>
-                                  </Card.Header>
-                                  
-                                  {moduleUnlocked && module.videos && module.videos.length > 0 && (
-                                    <Card.Body>
-                                      <div className="row g-2">
-                                        {module.videos.map((video, videoIndex) => {
-                                          const videoUnlocked = isVideoUnlocked(moduleIndex, videoIndex, training);
-                                          const isVideoCompleted = userProgress.completedVideos?.includes(video._id);
-                                          
-                                          return (
-                                            <div key={`video-${uniqueTrainingId}-${moduleIndex}-${videoIndex}-${video._id || videoIndex}`} className="col-md-4">
-                                              <Card className={`h-100 video-card ${!videoUnlocked ? 'opacity-50' : ''}`}>
-                                                <Card.Body className="p-2 text-center">
-                                                  <div className="video-thumbnail mb-2">
-                                                    <div className="ratio ratio-16x9 bg-light rounded">
-                                                      <div className="d-flex align-items-center justify-content-center">
-                                                        {isVideoCompleted ? (
-                                                          <CheckCircleFill size={24} className="text-success" />
-                                                        ) : videoUnlocked ? (
-                                                          <PlayFill size={24} className="text-primary" />
-                                                        ) : (
-                                                          <LockFill size={24} className="text-muted" />
-                                                        )}
-                                                      </div>
-                                                    </div>
-                                                  </div>
-                                                  <h6 className="card-title small mb-1">{video.title || `Video ${videoIndex + 1}`}</h6>
-                                                  
-                                                  {videoUnlocked && !isVideoCompleted ? (
-                                                    <div className="d-flex gap-1">
-                                                      <Button 
-                                                        variant="outline-primary" 
-                                                        size="sm"
-                                                        className="flex-fill"
-                                                        onClick={() => handleInlineVideo(video, moduleIndex, videoIndex)}
-                                                      >
-                                                        <PlayFill className="me-1" />
-                                                        Watch Inline
-                                                      </Button>
-                                                      <Button 
-                                                        variant="outline-secondary" 
-                                                        size="sm"
-                                                        onClick={() => {
-                                                          setSelectedVideo({
-                                                            ...video,
-                                                            moduleIndex,
-                                                            videoIndex
-                                                          });
-                                                          setShowVideoModal(true);
-                                                        }}
-                                                      >
-                                                        Modal
-                                                      </Button>
-                                                    </div>
-                                                  ) : isVideoCompleted ? (
-                                                    <Badge bg="success" className="w-100">
-                                                      <CheckCircleFill className="me-1" />
-                                                      Completed
-                                                    </Badge>
-                                                  ) : (
-                                                    <Badge bg="secondary" className="w-100">
-                                                      <LockFill className="me-1" />
-                                                      Locked
-                                                    </Badge>
-                                                  )}
-                                                </Card.Body>
-                                              </Card>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </Card.Body>
-                                  )}
-                                  
-                                  {!moduleUnlocked && (
-                                    <Card.Body>
-                                      <p className="text-muted small mb-0">
-                                        Complete the previous module to unlock this content.
-                                      </p>
-                                    </Card.Body>
-                                  )}
-                                </Card>
-                              );
-                            })}
-                          </div>
-                        ) : training.videos && training.videos.length > 0 ? (
-                          <div className="mb-3">
-                            <h6 className="fw-bold mb-2 text-dark">📹 Videos ({training.videos.length})</h6>
-                            <div className="row g-2">
-                              {training.videos.map((video, index) => {
-                                const isVideoUnlocked = index === 0 || userProgress.completedVideos?.includes(training.videos[index - 1]?._id);
-                                const isVideoCompleted = userProgress.completedVideos?.includes(video._id);
-                                
-                                return (
-                                  <div key={`fallback-video-${uniqueTrainingId}-${index}-${video._id || index}`} className="col-md-4">
-                                    <Card className={`h-100 video-card ${!isVideoUnlocked ? 'opacity-50' : ''}`}>
-                                      <Card.Body className="p-2 text-center">
-                                        <div className="video-thumbnail mb-2">
-                                          <div className="ratio ratio-16x9 bg-light rounded">
-                                            <div className="d-flex align-items-center justify-content-center">
-                                              {isVideoCompleted ? (
-                                                <CheckCircleFill size={24} className="text-success" />
-                                              ) : isVideoUnlocked ? (
-                                                <PlayFill size={24} className="text-primary" />
-                                              ) : (
-                                                <LockFill size={24} className="text-muted" />
-                                              )}
-                                            </div>
-                                          </div>
-                                      </div>
-                                        <h6 className="card-title small mb-1">{video.title || `Video ${index + 1}`}</h6>
-                                        
-                                        {isVideoUnlocked && !isVideoCompleted ? (
-                                          <div className="d-flex gap-1">
-                                        <Button 
-                                          variant="outline-primary" 
-                                          size="sm"
-                                              className="flex-fill"
-                                              onClick={() => handleInlineVideo(video, 0, index)}
-                                            >
-                                              <PlayFill className="me-1" />
-                                              Watch Inline
-                                            </Button>
-                                            <Button 
-                                              variant="outline-secondary" 
-                                              size="sm"
-                                              onClick={() => {
-                                                setSelectedVideo({
-                                                  ...video,
-                                                  moduleIndex: 0,
-                                                  videoIndex: index
-                                                });
-                                                setShowVideoModal(true);
-                                              }}
-                                            >
-                                              Modal
-                                        </Button>
-                                      </div>
-                                        ) : isVideoCompleted ? (
-                                          <Badge bg="success" className="w-100">
-                                            <CheckCircleFill className="me-1" />
-                                            Completed
-                                          </Badge>
-                                        ) : (
-                                          <Badge bg="secondary" className="w-100">
-                                            <LockFill className="me-1" />
-                                            Locked
-                                          </Badge>
-                                        )}
-                                      </Card.Body>
-                                    </Card>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="mb-3">
-                            <h6 className="fw-bold mb-2 text-dark">📹 Videos</h6>
-                            <p className="text-muted small mb-0">No videos available for this training.</p>
-                          </div>
-                        )}
-
-                        {/* Progress Tracker */}
-                        <div className="mt-3 mb-3">
-                          <ProgressTracker
-                            modules={training.moduleDetails || []}
-                            userProgress={userProgress}
-                            onVideoComplete={handleVideoComplete}
-                            onModuleComplete={handleModuleComplete}
-                            currentUserId={currentUserId}
-                          />
-                        </div>
-
-                        <div className="d-flex justify-content-between align-items-center">
-                          <div className="d-flex gap-2">
-                            {training.numberOfModules > 0 && (
+                        {/* Module Count and Type */}
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                          <div className="d-flex align-items-center gap-2">
+                            {training.moduleDetails && (
                               <small className="text-muted">
-                                {training.numberOfModules} modules
+                                📚 {training.moduleDetails.length} modules
                               </small>
                             )}
                             <Badge 
@@ -877,12 +871,15 @@ const Training = () => {
                               {training.type}
                             </Badge>
                           </div>
+                        </div>
+
+                        {/* Action Button */}
+                        <div className="d-grid">
                           <Button 
-                            variant={training.progress > 0 ? 'outline-primary' : 'primary'}
-                            size="sm"
+                            variant={training.progress > 0 ? 'outline-success' : 'success'}
                             onClick={() => handleStartTraining(training)}
                           >
-                            {training.progress > 0 ? 'Continue' : 'Start'}
+                            {training.progress > 0 ? 'Continue Training' : 'Start Training'}
                           </Button>
                         </div>
                       </Card.Body>
@@ -896,57 +893,62 @@ const Training = () => {
 
         {/* Completed Trainings */}
         <div className="mb-4">
-          <h5 className="fw-bold mb-3 text-dark">
+          <h5 className="fw-bold mb-3">
             Completed Trainings ({getCompletedTrainings().length})
           </h5>
           {getCompletedTrainings().length === 0 ? (
             <p className="text-muted text-center">No completed trainings yet</p>
           ) : (
-            <Row>
+            <Row className="g-4">
               {getCompletedTrainings().map((training, trainingIndex) => {
                 const uniqueCompletedTrainingId = training.id || training._id || `completed-training-${trainingIndex}`;
                 return (
-                  <Col key={`completed-training-${uniqueCompletedTrainingId}-${trainingIndex}`} lg={6} className="mb-3">
-                  <Card className="h-100 border-0 shadow-sm bg-light">
-                    <Card.Body className="p-4">
-                      <div className="d-flex justify-content-between align-items-start mb-3">
-                        <h6 className="fw-bold text-dark mb-1">{training.title}</h6>
-                        <Badge bg="success">100%</Badge>
-                      </div>
-                      
-                      <div className="mb-3">
-                        <div className="d-flex justify-content-between align-items-center mb-1">
-                          <small className="text-muted">Progress</small>
-                          <small className="fw-bold">100%</small>
+                  <Col key={`completed-training-${uniqueCompletedTrainingId}-${trainingIndex}`} xs={12} className="mb-3">
+                    <Card className="h-100 border-0 shadow-sm bg-light">
+                      <Card.Body className="p-4">
+                        <div className="d-flex justify-content-between align-items-start mb-3">
+                          <div>
+                            <h6 className="fw-bold mb-1">{training.title}</h6>
+                            {training.description && (
+                              <p className="text-muted small mb-0">{training.description}</p>
+                            )}
+                          </div>
+                          <Badge bg="success">Completed</Badge>
                         </div>
-                        <ProgressBar 
-                          now={100} 
-                          variant="success"
-                          style={{ height: '8px' }}
-                        />
-                      </div>
-                      
-                      <div className="d-flex justify-content-between align-items-center">
-                        <Badge 
-                          bg={training.type === 'mandatory' ? 'danger' : 'primary'} 
-                          className="small"
-                        >
-                          {training.type}
-                        </Badge>
-                        <Button variant="outline-secondary" size="sm">
-                          Review
-                        </Button>
-                      </div>
-                    </Card.Body>
-                  </Card>
-                </Col>
+                        
+                        <div className="mb-3">
+                          <ProgressBar 
+                            now={100} 
+                            variant="success"
+                            style={{ height: '8px' }}
+                          />
+                        </div>
+                        
+                        <div className="d-flex justify-content-between align-items-center">
+                          <Badge 
+                            bg={training.type === 'mandatory' ? 'danger' : 'primary'} 
+                            className="small"
+                          >
+                            {training.type}
+                          </Badge>
+                          <Button 
+                            variant="outline-secondary" 
+                            size="sm"
+                            onClick={() => handleStartTraining(training)}
+                          >
+                            Review
+                          </Button>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
                 );
               })}
             </Row>
           )}
         </div>
 
-        {/* Action Buttons */}
+        {/* Refresh Button */}
         <div className="text-center">
           <Button 
             variant="outline-primary" 
@@ -957,7 +959,7 @@ const Training = () => {
             {loading ? 'Refreshing...' : 'Refresh Trainings'}
           </Button>
         </div>
-      </div>
+      </Container>
 
       {/* Video Player Modal */}
       <VideoPlayer
