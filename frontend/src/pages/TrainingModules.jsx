@@ -37,12 +37,25 @@ const TrainingModules = () => {
   const [inlineVideo, setInlineVideo] = useState(null);
   const [watchedVideos, setWatchedVideos] = useState({}); // Track which videos have been watched
   const [videoWatchTime, setVideoWatchTime] = useState({}); // Track how long each video has been watched
+  const [videoProgress, setVideoProgress] = useState({}); // Track video watch progress
+  const [videoStartTime, setVideoStartTime] = useState({}); // Track when video started
+  const [youtubeProgressTimer, setYoutubeProgressTimer] = useState({}); // Timer for YouTube progress simulation
 
   useEffect(() => {
     if (trainingId) {
       fetchTrainingDetails();
     }
   }, [trainingId]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all YouTube progress timers
+      Object.values(youtubeProgressTimer).forEach(timer => {
+        if (timer) clearInterval(timer);
+      });
+    };
+  }, [youtubeProgressTimer]);
 
   useEffect(() => {
     const savedProgress = localStorage.getItem(`userProgress_${currentUserId}`);
@@ -122,6 +135,25 @@ const TrainingModules = () => {
       lastCompletedAt: new Date().toISOString()
     };
     
+    // Check if this training is now complete
+    if (training && training.moduleDetails) {
+      const totalVideos = training.moduleDetails.reduce((total, module) => 
+        total + (module.videos ? module.videos.length : 0), 0
+      );
+      
+      if (newTrainingProgress.completedVideos.length >= totalVideos) {
+        // Mark training as completed
+        newTrainingProgress.trainingCompleted = true;
+        newTrainingProgress.completedAt = new Date().toISOString();
+        console.log('🎉 Training completed:', training.title);
+        
+        // Show training completion message
+        setTimeout(() => {
+          alert(`🎊 Congratulations! You've completed the entire "${training.title}" training!`);
+        }, 500);
+      }
+    }
+    
     const newProgress = {
       ...userProgress,
       [trainingProgressKey]: newTrainingProgress,
@@ -160,7 +192,42 @@ const TrainingModules = () => {
     setSelectedVideo(null);
   };
 
+  // Start YouTube progress simulation
+  const startYoutubeProgressSimulation = (videoId) => {
+    // Clear any existing timer
+    if (youtubeProgressTimer[videoId]) {
+      clearInterval(youtubeProgressTimer[videoId]);
+    }
+    
+    // Start a timer that simulates progress every 2 seconds
+    const timer = setInterval(() => {
+      setVideoProgress(prev => {
+        const currentProgress = prev[videoId] || 0;
+        // Simulate progress: increase by 5% every 2 seconds, max 100%
+        const newProgress = Math.min(currentProgress + 5, 100);
+        return {
+          ...prev,
+          [videoId]: newProgress
+        };
+      });
+    }, 2000);
+    
+    setYoutubeProgressTimer(prev => ({
+      ...prev,
+      [videoId]: timer
+    }));
+  };
+
   const closeInlineVideo = () => {
+    // Clean up YouTube progress timer if exists
+    if (inlineVideo && inlineVideo._id && youtubeProgressTimer[inlineVideo._id]) {
+      clearInterval(youtubeProgressTimer[inlineVideo._id]);
+      setYoutubeProgressTimer(prev => {
+        const newTimers = { ...prev };
+        delete newTimers[inlineVideo._id];
+        return newTimers;
+      });
+    }
     setInlineVideo(null);
   };
 
@@ -182,7 +249,7 @@ const TrainingModules = () => {
         videoId = videoId.split('?')[0];
       }
       
-      return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&controls=1`;
+             return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&controls=1&disablekb=1&fs=0`;
     }
     
     if (url.match(/\.(mp4|webm|ogg|mov|avi)$/i)) {
@@ -255,17 +322,75 @@ const TrainingModules = () => {
     return Math.round((completedVideos / totalVideos) * 100);
   };
 
-  // Check if video can be completed (minimum 30 seconds watch time)
-  const canCompleteVideo = (video, videoIndex) => {
-    const videoKey = `${video._id || videoIndex}`;
-    const startTime = videoWatchTime[videoKey];
+  // Check if training is completed
+  const isTrainingCompleted = () => {
+    if (!training || !training.moduleDetails) return false;
     
-    if (!startTime) return false;
+    const trainingProgressKey = `training_${trainingId}`;
+    const trainingProgress = userProgress[trainingProgressKey] || {};
+    
+    // Check if training was explicitly marked as completed
+    if (trainingProgress.trainingCompleted) return true;
+    
+    // Check if all videos are completed
+    const totalVideos = training.moduleDetails.reduce((total, module) => 
+      total + (module.videos ? module.videos.length : 0), 0
+    );
+    
+    if (totalVideos > 0) {
+      const completedVideos = trainingProgress.completedVideos?.length || 0;
+      return completedVideos >= totalVideos;
+    }
+    
+    return false;
+  };
+
+  // Check if video can be completed (must be watched from start to finish)
+  const canCompleteVideo = (video, videoIndex) => {
+    if (!video || !video._id) return false;
+    
+    const videoKey = video._id;
+    const progress = videoProgress[videoKey];
+    const startTime = videoStartTime[videoKey];
+    
+    console.log('🔍 TrainingModules - Checking completion for video:', videoKey);
+    console.log('🔍 TrainingModules - Progress:', progress);
+    console.log('🔍 TrainingModules - Start time:', startTime);
+    console.log('🔍 TrainingModules - Current time:', Date.now());
+    
+    // For YouTube videos, we use a time-based approach
+    if (video.videoUri && (video.videoUri.includes('youtube.com') || video.videoUri.includes('youtu.be'))) {
+      if (!startTime) {
+        console.log('❌ TrainingModules - No start time for YouTube video');
+        return false;
+      }
+      
+      const watchDuration = Date.now() - startTime;
+      const minimumWatchTime = 60000; // 1 minute for YouTube videos
+      const canComplete = watchDuration >= minimumWatchTime;
+      
+      console.log('🔍 TrainingModules - YouTube video - Watch duration:', watchDuration, 'ms');
+      console.log('🔍 TrainingModules - YouTube video - Minimum time:', minimumWatchTime, 'ms');
+      console.log('🔍 TrainingModules - YouTube video - Can complete:', canComplete);
+      
+      return canComplete;
+    }
+    
+    // For regular videos, use progress-based approach
+    if (!progress || !startTime) {
+      console.log('❌ TrainingModules - Missing progress or start time for regular video');
+      return false;
+    }
     
     const watchDuration = Date.now() - startTime;
-    const minimumWatchTime = 30000; // 30 seconds in milliseconds
+    const minimumWatchTime = 30000; // 30 seconds
+    const canComplete = progress >= 80 && watchDuration >= minimumWatchTime;
     
-    return watchDuration >= minimumWatchTime;
+    console.log('🔍 TrainingModules - Regular video - Progress:', progress, '%');
+    console.log('🔍 TrainingModules - Regular video - Watch duration:', watchDuration, 'ms');
+    console.log('🔍 TrainingModules - Regular video - Can complete:', canComplete);
+    
+    return canComplete;
   };
 
   if (loading) {
@@ -336,16 +461,24 @@ const TrainingModules = () => {
         </Container>
       </div>
 
-      <Container className="py-4">
-        {/* Training Description */}
-        <Card className="border-0 shadow-sm mb-4">
-          <Card.Body className="p-4">
-            <p className="text-muted mb-0">
-              {training.description}
-              <span className="text-primary fw-bold"> 20-12-2024</span>
-            </p>
-          </Card.Body>
-        </Card>
+             <Container className="py-4">
+         {/* Training Completion Banner */}
+         {isTrainingCompleted() && (
+           <Alert variant="success" className="mb-4 text-center">
+             <CheckCircleFill size={24} className="me-2" />
+             <strong>🎉 Training Completed!</strong> You've successfully completed all videos in this training.
+           </Alert>
+         )}
+         
+         {/* Training Description */}
+         <Card className="border-0 shadow-sm mb-4">
+           <Card.Body className="p-4">
+             <p className="text-muted mb-0">
+               {training.description}
+               <span className="text-primary fw-bold"> 20-12-2024</span>
+             </p>
+           </Card.Body>
+         </Card>
 
         {/* Inline Video Player */}
         {inlineVideo && (
@@ -365,29 +498,57 @@ const TrainingModules = () => {
                                  <div className="ratio ratio-16x9">
                      {inlineVideo.videoUri && (
                        inlineVideo.videoUri.includes('youtube.com') || inlineVideo.videoUri.includes('youtu.be') ? (
-                         <iframe
-                           src={processVideoUrl(inlineVideo.videoUri)}
-                           title={inlineVideo.title}
-                           frameBorder="0"
-                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                           allowFullScreen
-                           style={{ border: 'none' }}
-                           onError={(e) => {
-                             console.error('YouTube iframe error:', e);
-                             setError('Failed to load YouTube video. Please check the URL.');
-                           }}
-                         />
+                                                   <iframe
+                            src={processVideoUrl(inlineVideo.videoUri)}
+                            title={inlineVideo.title}
+                            frameBorder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                            style={{ border: 'none' }}
+                            onLoad={() => {
+                              // Track when YouTube video starts
+                              const videoKey = inlineVideo._id;
+                              setVideoStartTime(prev => ({
+                                ...prev,
+                                [videoKey]: Date.now()
+                              }));
+                              // Start progress simulation for YouTube
+                              startYoutubeProgressSimulation(videoKey);
+                            }}
+                            onError={(e) => {
+                              console.error('YouTube iframe error:', e);
+                              setError('Failed to load YouTube video. Please check the URL.');
+                            }}
+                          />
                        ) : (
-                         <video
-                           controls
-                           autoPlay
-                           className="w-100 h-100"
-                           style={{ objectFit: 'contain' }}
-                           onError={(e) => {
-                             console.error('Video playback error:', e);
-                             setError('Failed to load video. Please check the video file.');
-                           }}
-                         >
+                                                 <video
+                          controls
+                          autoPlay
+                          className="w-100 h-100"
+                          style={{ objectFit: 'contain' }}
+                          onLoadStart={() => {
+                            // Track when video starts
+                            const videoKey = inlineVideo._id;
+                            setVideoStartTime(prev => ({
+                              ...prev,
+                              [videoKey]: Date.now()
+                            }));
+                          }}
+                          onTimeUpdate={(e) => {
+                            // Track video progress
+                            const video = e.target;
+                            const progress = (video.currentTime / video.duration) * 100;
+                            const videoKey = inlineVideo._id;
+                            setVideoProgress(prev => ({
+                              ...prev,
+                              [videoKey]: progress
+                            }));
+                          }}
+                          onError={(e) => {
+                            console.error('Video playback error:', e);
+                            setError('Failed to load video. Please check the video file.');
+                          }}
+                        >
                            <source src={inlineVideo.videoUri} type="video/mp4" />
                            <source src={inlineVideo.videoUri} type="video/webm" />
                            <source src={inlineVideo.videoUri} type="video/ogg" />
@@ -413,23 +574,47 @@ const TrainingModules = () => {
                       Module {inlineVideo.moduleIndex + 1}, Video {inlineVideo.videoIndex + 1}
                     </small>
                   </div>
-                  {canCompleteVideo(inlineVideo, inlineVideo.videoIndex) ? (
-                    <Button 
-                      variant="success" 
-                      size="sm"
-                      onClick={() => {
-                        handleVideoComplete(inlineVideo, inlineVideo.moduleIndex, inlineVideo.videoIndex);
-                        closeInlineVideo();
-                      }}
-                    >
-                      <CheckCircleFill className="me-1" />
-                      Mark Complete
-                    </Button>
-                  ) : (
-                    <div className="text-muted small">
-                      ⏱️ Watch for 30 seconds to complete
-                    </div>
-                  )}
+                                                                           {canCompleteVideo(inlineVideo, inlineVideo.videoIndex) ? (
+                      <Button 
+                        variant="success" 
+                        size="sm"
+                        onClick={() => {
+                          handleVideoComplete(inlineVideo, inlineVideo.moduleIndex, inlineVideo.videoIndex);
+                          closeInlineVideo();
+                        }}
+                      >
+                        <CheckCircleFill className="me-1" />
+                        Mark Complete
+                      </Button>
+                    ) : (
+                      <div className="text-center">
+                        <div className="text-muted small mb-1">
+                          ⏱️ Watch the complete video to unlock completion
+                        </div>
+                        <div className="text-muted small">
+                          Progress: {Math.round(videoProgress[inlineVideo._id] || 0)}%
+                        </div>
+                        {/* Fallback button for YouTube videos if progress is 100% */}
+                        {inlineVideo.videoUri && 
+                         (inlineVideo.videoUri.includes('youtube.com') || inlineVideo.videoUri.includes('youtu.be')) &&
+                         (videoProgress[inlineVideo._id] || 0) >= 100 && (
+                          <div className="mt-2">
+                            <Button 
+                              variant="warning" 
+                              size="sm"
+                              onClick={() => {
+                                console.log('🎯 TrainingModules - Using fallback completion for YouTube video');
+                                handleVideoComplete(inlineVideo, inlineVideo.moduleIndex, inlineVideo.videoIndex);
+                                closeInlineVideo();
+                              }}
+                            >
+                              <CheckCircleFill className="me-1" />
+                              Mark Complete (Fallback)
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                 </div>
               </div>
             </Card.Body>
@@ -526,24 +711,25 @@ const TrainingModules = () => {
                                           {watchedVideos[videoKey] ? 'Resume' : 'Watch Now'}
                                         </Button>
                                         
-                                        {/* Only show Complete button if video has been watched for minimum time */}
-                                        {watchedVideos[videoKey] && canCompleteVideo(video, videoIndex) && (
-                                          <Button 
-                                            variant="primary" 
-                                            size="sm"
-                                            onClick={() => handleVideoComplete(video, moduleIndex, videoIndex)}
-                                          >
-                                            <CheckCircleFill className="me-1" />
-                                            Complete
-                                          </Button>
-                                        )}
-                                        
-                                        {/* Show watching message if video started but not enough time */}
-                                        {watchedVideos[videoKey] && !canCompleteVideo(video, videoIndex) && (
-                                          <div className="text-muted small text-center">
-                                            ⏱️ Watching...
-                                          </div>
-                                        )}
+                                                                                 {/* Only show Complete button if video has been watched completely */}
+                                         {watchedVideos[videoKey] && canCompleteVideo(video, videoIndex) && (
+                                           <Button 
+                                             variant="primary" 
+                                             size="sm"
+                                             onClick={() => handleVideoComplete(video, moduleIndex, videoIndex)}
+                                           >
+                                             <CheckCircleFill className="me-1" />
+                                             Complete
+                                           </Button>
+                                         )}
+                                         
+                                         {/* Show progress if video started but not complete */}
+                                         {watchedVideos[videoKey] && !canCompleteVideo(video, videoIndex) && (
+                                           <div className="text-muted small text-center">
+                                             <div>⏱️ Watching...</div>
+                                             <div>Progress: {Math.round(videoProgress[video._id] || 0)}%</div>
+                                           </div>
+                                         )}
                                       </div>
                                     ) : isVideoCompleted ? (
                                       <Badge bg="success" className="fs-6">
