@@ -337,6 +337,58 @@
   }
 }
 
+/* Progress Tracker Styles */
+.progress-tracker {
+  font-size: 0.9rem;
+}
+
+.progress-tracker .card {
+  border: none;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.progress-tracker .card-header {
+  border-bottom: none;
+  font-weight: 600;
+}
+
+.progress-tracker .modules-progress .card {
+  margin-bottom: 1rem;
+}
+
+.progress-tracker .video-card {
+  transition: all 0.2s ease;
+}
+
+.progress-tracker .video-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.progress-tracker .video-card.opacity-50 {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.progress-tracker .badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.progress-tracker .list-group-item {
+  border: none;
+  padding: 0.75rem;
+}
+
+.progress-tracker .progress {
+  height: 0.5rem;
+}
+
+.progress-tracker .btn {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+}
+
 /* Video Gallery Styles */
 .video-gallery {
   padding: 1rem 0;

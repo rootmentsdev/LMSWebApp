@@ -160,7 +160,13 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
   const handleVideoComplete = () => {
     setIsPlaying(false);
     if (onVideoComplete) {
-      onVideoComplete(video);
+      // Pass additional context if available
+      const videoData = {
+        ...video,
+        moduleIndex: video.moduleIndex,
+        videoIndex: video.videoIndex
+      };
+      onVideoComplete(videoData);
     }
   };
 
@@ -298,37 +304,38 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
       );
     }
 
-    // YouTube videos
-    if (videoType === 'youtube') {
-      console.log('🎬 Rendering YouTube iframe with URL:', videoUrl);
-      return (
-        <div className="ratio ratio-16x9">
-          <iframe
-            src={videoUrl}
-            title={video.title || 'Video'}
-            frameBorder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            className="rounded"
-            onError={handleVideoError}
-            onLoad={handleVideoLoad}
-          ></iframe>
-          <div className="mt-2 text-center">
-            <small className="text-muted">
-              If the video doesn't load, try{' '}
-              <Button 
-                variant="link" 
-                size="sm" 
-                className="p-0"
-                onClick={() => window.open(video.videoUri, '_blank')}
-              >
-                opening in YouTube
-              </Button>
-            </small>
-          </div>
-        </div>
-      );
-    }
+         // YouTube videos
+     if (videoType === 'youtube') {
+       console.log('🎬 Rendering YouTube iframe with URL:', videoUrl);
+       return (
+         <div className="ratio ratio-16x9">
+           <iframe
+             src={`${videoUrl}?autoplay=0&rel=0&modestbranding=1`}
+             title={video.title || 'Video'}
+             frameBorder="0"
+             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+             allowFullScreen
+             className="rounded"
+             onError={handleVideoError}
+             onLoad={handleVideoLoad}
+             style={{ border: 'none' }}
+           ></iframe>
+           <div className="mt-2 text-center">
+             <small className="text-muted">
+               If the video doesn't load, try{' '}
+               <Button 
+                 variant="link" 
+                 size="sm" 
+                 className="p-0"
+                 onClick={() => window.open(video.videoUri, '_blank')}
+               >
+                 opening in YouTube
+               </Button>
+             </small>
+           </div>
+         </div>
+       );
+     }
 
     // Direct video files
     if (videoType === 'direct') {

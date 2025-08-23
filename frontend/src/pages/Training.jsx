@@ -13,6 +13,12 @@ import {
   Modal
 } from 'react-bootstrap';
 import { 
+  PlayFill, 
+  CheckCircleFill, 
+  LockFill,
+  X
+} from 'react-bootstrap-icons';
+import { 
   getUserAssignedTrainings, 
   getUserMandatoryTrainings,
   testAPIConnection,
@@ -25,6 +31,7 @@ import {
   getModuleVideoUrls
 } from '../api';
 import VideoPlayer from '../components/VideoPlayer';
+import ProgressTracker from '../components/ProgressTracker';
 
 const Training = () => {
   const [activeTab, setActiveTab] = useState('assigned');
@@ -37,10 +44,27 @@ const Training = () => {
   const [debugInfo, setDebugInfo] = useState('');
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [showVideoModal, setShowVideoModal] = useState(false);
+  const [userProgress, setUserProgress] = useState({});
+  const [currentUserId] = useState('user123'); // In real app, get from auth context
+  const [inlineVideo, setInlineVideo] = useState(null); // New state for inline video display
 
   useEffect(() => {
     fetchUserTrainings();
   }, []);
+
+  // Load user progress from localStorage
+  useEffect(() => {
+    const savedProgress = localStorage.getItem(`userProgress_${currentUserId}`);
+    if (savedProgress) {
+      try {
+        const parsedProgress = JSON.parse(savedProgress);
+        setUserProgress(parsedProgress);
+        console.log('📊 Loaded user progress:', parsedProgress);
+      } catch (err) {
+        console.error('Error parsing saved progress:', err);
+      }
+    }
+  }, [currentUserId]);
 
   const testConnection = async () => {
     try {
@@ -169,6 +193,128 @@ const Training = () => {
   const handleCloseVideoModal = () => {
     setShowVideoModal(false);
     setSelectedVideo(null);
+  };
+
+  // Handle video completion for progress tracking
+  const handleVideoComplete = (video, moduleIndex, videoIndex) => {
+    console.log('🎯 Video completed:', video, 'Module:', moduleIndex, 'Video:', videoIndex);
+    
+    // Update user progress
+    const newProgress = {
+      ...userProgress,
+      completedVideos: [...(userProgress.completedVideos || []), video._id],
+      lastCompletedVideo: video._id,
+      lastCompletedAt: new Date().toISOString()
+    };
+    
+    setUserProgress(newProgress);
+    
+    // Save to localStorage
+    localStorage.setItem(`userProgress_${currentUserId}`, JSON.stringify(newProgress));
+    
+    // Show success message
+    alert(`🎉 Congratulations! You've completed "${video.title}"`);
+    
+    // Close video modal
+    handleCloseVideoModal();
+  };
+
+  // Handle inline video display
+  const handleInlineVideo = (video, moduleIndex, videoIndex) => {
+    console.log('🎬 Playing inline video:', video);
+    setInlineVideo({
+      ...video,
+      moduleIndex,
+      videoIndex
+    });
+    // Close modal if open
+    setShowVideoModal(false);
+    setSelectedVideo(null);
+  };
+
+  // Close inline video
+  const closeInlineVideo = () => {
+    setInlineVideo(null);
+  };
+
+  // Process video URL for YouTube embedding
+  const processVideoUrl = (url) => {
+    if (!url) return null;
+    
+    // Handle YouTube URLs
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      let videoId = '';
+      if (url.includes('youtube.com/watch?v=')) {
+        videoId = url.split('v=')[1];
+      } else if (url.includes('youtu.be/')) {
+        videoId = url.split('youtu.be/')[1];
+      }
+      
+      // Remove any additional parameters
+      if (videoId.includes('&')) {
+        videoId = videoId.split('&')[0];
+      }
+      if (videoId.includes('?')) {
+        videoId = videoId.split('?')[0];
+      }
+      
+      return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&controls=1`;
+    }
+    
+    // Handle direct video files
+    if (url.match(/\.(mp4|webm|ogg|mov|avi)$/i)) {
+      return url;
+    }
+    
+    return url;
+  };
+
+  // Handle module completion
+  const handleModuleComplete = (moduleId, moduleIndex) => {
+    console.log('🏆 Module completed:', moduleId, 'Index:', moduleIndex);
+    
+    const newProgress = {
+      ...userProgress,
+      completedModules: [...(userProgress.completedModules || []), moduleId],
+      lastCompletedModule: moduleId,
+      lastCompletedAt: new Date().toISOString()
+    };
+    
+    setUserProgress(newProgress);
+    localStorage.setItem(`userProgress_${currentUserId}`, JSON.stringify(newProgress));
+    
+    alert(`🎊 Module completed! You can now access the next module.`);
+  };
+
+  // Check if video is unlocked based on progress
+  const isVideoUnlocked = (moduleIndex, videoIndex, training) => {
+    if (videoIndex === 0) return true; // First video is always unlocked
+    
+    if (!training || !training.moduleDetails || !training.moduleDetails[moduleIndex]) return false;
+    
+    const module = training.moduleDetails[moduleIndex];
+    if (!module.videos || videoIndex === 0) return true;
+    
+    // Check if previous video is completed
+    const previousVideo = module.videos[videoIndex - 1];
+    if (!previousVideo) return false;
+    
+    return userProgress.completedVideos?.includes(previousVideo._id) || false;
+  };
+
+  // Check if module is unlocked
+  const isModuleUnlocked = (moduleIndex, training) => {
+    if (moduleIndex === 0) return true; // First module is always unlocked
+    
+    if (!training || !training.moduleDetails || !training.moduleDetails[moduleIndex - 1]) return false;
+    
+    const previousModule = training.moduleDetails[moduleIndex - 1];
+    if (!previousModule.videos) return false;
+    
+    // Check if all videos in previous module are completed
+    return previousModule.videos.every(video => 
+      userProgress.completedVideos?.includes(video._id)
+    );
   };
 
   const handleStartTraining = async (training) => {
@@ -399,6 +545,76 @@ const Training = () => {
           </Alert>
         )}
 
+        {/* Inline Video Player */}
+        {inlineVideo && (
+          <div className="mb-4">
+            <Card className="border-0 shadow">
+              <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 className="mb-0">
+                  🎬 Now Playing: {inlineVideo.title || 'Video'}
+                </h5>
+                <Button 
+                  variant="light" 
+                  size="sm" 
+                  onClick={closeInlineVideo}
+                  className="text-dark"
+                >
+                  <X />
+                </Button>
+              </Card.Header>
+              <Card.Body className="p-0">
+                <div className="ratio ratio-16x9">
+                  {inlineVideo.videoUri && (
+                    inlineVideo.videoUri.includes('youtube.com') || inlineVideo.videoUri.includes('youtu.be') ? (
+                      <iframe
+                        src={processVideoUrl(inlineVideo.videoUri)}
+                        title={inlineVideo.title || 'Video'}
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        style={{ border: 'none' }}
+                      />
+                    ) : (
+                      <video
+                        controls
+                        autoPlay
+                        className="w-100 h-100"
+                        style={{ objectFit: 'contain' }}
+                      >
+                        <source src={inlineVideo.videoUri} type="video/mp4" />
+                        <source src={inlineVideo.videoUri} type="video/webm" />
+                        <source src={inlineVideo.videoUri} type="video/ogg" />
+                        Your browser does not support the video tag.
+                      </video>
+                    )
+                  )}
+                </div>
+                <div className="p-3">
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                      <h6 className="mb-1">{inlineVideo.title || 'Video'}</h6>
+                      <small className="text-muted">
+                        Module {inlineVideo.moduleIndex + 1}, Video {inlineVideo.videoIndex + 1}
+                      </small>
+                    </div>
+                    <Button 
+                      variant="success" 
+                      size="sm"
+                      onClick={() => {
+                        handleVideoComplete(inlineVideo, inlineVideo.moduleIndex, inlineVideo.videoIndex);
+                        closeInlineVideo();
+                      }}
+                    >
+                      <CheckCircleFill className="me-1" />
+                      Mark Complete
+                    </Button>
+                  </div>
+                </div>
+              </Card.Body>
+            </Card>
+          </div>
+        )}
+
         {/* Pending Trainings */}
         <div className="mb-4">
           <h5 className="fw-bold mb-3 text-dark">
@@ -416,10 +632,11 @@ const Training = () => {
             </Alert>
           ) : (
             <Row>
-              {getPendingTrainings().map((training) => {
+              {getPendingTrainings().map((training, trainingIndex) => {
                 const deadlineStatus = getDeadlineStatus(training.deadline);
+                const uniqueTrainingId = training.id || training._id || `training-${trainingIndex}`;
                 return (
-                  <Col key={training.id} lg={6} className="mb-3">
+                  <Col key={`training-${uniqueTrainingId}-${trainingIndex}`} lg={6} className="mb-3">
                     <Card className="h-100 border-0 shadow-sm">
                       <Card.Body className="p-4">
                         <div className="d-flex justify-content-between align-items-start mb-3">
@@ -446,71 +663,205 @@ const Training = () => {
                           />
                         </div>
 
-                                                                          {/* Videos Section - Enhanced Debug */}
-                         {training.videos && training.videos.length > 0 ? (
-                           <div className="mb-3">
-                             <h6 className="fw-bold mb-2 text-dark">📹 Videos ({training.videos.length})</h6>
-                             <div className="row g-2">
-                               {training.videos.slice(0, 3).map((video, index) => {
-                                 console.log(`🎬 Video ${index}:`, video);
-                                 console.log(`🎬 Video ${index} properties:`, {
-                                   _id: video._id,
-                                   title: video.title,
-                                   videoUri: video.videoUri,
-                                   url: video.url,
-                                   moduleName: video.moduleName,
-                                   hasVideoUri: !!video.videoUri,
-                                   hasUrl: !!video.url
-                                 });
-                                 return (
-                                   <div key={index} className="col-12">
-                                     <div className="d-flex align-items-center justify-content-between p-2 bg-light rounded">
-                                       <div className="d-flex align-items-center">
-                                         <span className="text-primary me-2">▶️</span>
-                                         <span className="small fw-bold">{video.title || `Video ${index + 1}`}</span>
-                                       </div>
-                                       <div className="d-flex align-items-center gap-2">
-                                         <small className="text-muted">
-                                           {video.videoUri ? '✅ Has URL' : '❌ No URL'}
-                                         </small>
-                                         <Button 
-                                           variant="outline-primary" 
-                                           size="sm"
-                                           onClick={() => handleStartVideo(video)}
-                                         >
-                                           Watch
-                                         </Button>
-                                       </div>
-                                     </div>
-                                   </div>
-                                 );
-                               })}
-                               {training.videos.length > 3 && (
-                                 <div className="col-12">
-                                   <small className="text-muted">
-                                     +{training.videos.length - 3} more videos
-                                   </small>
-                                 </div>
-                               )}
-                             </div>
-                           </div>
-                         ) : (
-                           <div className="mb-3">
-                             <div className="p-2 bg-light rounded">
-                               <small className="text-muted">
-                                 🔍 Debug: training.videos = {JSON.stringify(training.videos)}
-                               </small>
-                               <br />
-                               <small className="text-muted">
-                                 🔍 Debug: training.moduleDetails = {training.moduleDetails ? `${training.moduleDetails.length} modules` : 'undefined'}
-                               </small>
-                               <br />
-                               <small className="text-muted">
-                                 🔍 Debug: training.userProgress = {training.userProgress ? `${training.userProgress.length} entries` : 'undefined'}
-                               </small>
-                             </div>
-                           </div>
-                         )}
+                        {/* Videos Section - With Sequential Unlocking */}
+                        {training.moduleDetails && training.moduleDetails.length > 0 ? (
+                          <div className="mb-3">
+                            <h6 className="fw-bold mb-2 text-dark">📹 Learning Modules ({training.moduleDetails.length})</h6>
+                            
+                            {training.moduleDetails.map((module, moduleIndex) => {
+                              const moduleUnlocked = isModuleUnlocked(moduleIndex, training);
+                              
+                              return (
+                                <Card key={`module-${uniqueTrainingId}-${moduleIndex}-${module._id || moduleIndex}`} className={`mb-3 ${!moduleUnlocked ? 'opacity-50' : ''}`}>
+                                  <Card.Header className={`d-flex justify-content-between align-items-center ${
+                                    moduleUnlocked ? 'bg-primary text-white' : 'bg-secondary text-white'
+                                  }`}>
+                                    <div className="d-flex align-items-center">
+                                      {moduleUnlocked ? (
+                                        <PlayFill className="me-2" />
+                                      ) : (
+                                        <LockFill className="me-2" />
+                                      )}
+                                      <span className="fw-bold">
+                                        {module.title || `Module ${moduleIndex + 1}`}
+                                      </span>
+                                    </div>
+                                    <Badge bg={moduleUnlocked ? 'light' : 'secondary'}>
+                                      {moduleUnlocked ? 'Unlocked' : 'Locked'}
+                                    </Badge>
+                                  </Card.Header>
+                                  
+                                  {moduleUnlocked && module.videos && module.videos.length > 0 && (
+                                    <Card.Body>
+                                      <div className="row g-2">
+                                        {module.videos.map((video, videoIndex) => {
+                                          const videoUnlocked = isVideoUnlocked(moduleIndex, videoIndex, training);
+                                          const isVideoCompleted = userProgress.completedVideos?.includes(video._id);
+                                          
+                                          return (
+                                            <div key={`video-${uniqueTrainingId}-${moduleIndex}-${videoIndex}-${video._id || videoIndex}`} className="col-md-4">
+                                              <Card className={`h-100 video-card ${!videoUnlocked ? 'opacity-50' : ''}`}>
+                                                <Card.Body className="p-2 text-center">
+                                                  <div className="video-thumbnail mb-2">
+                                                    <div className="ratio ratio-16x9 bg-light rounded">
+                                                      <div className="d-flex align-items-center justify-content-center">
+                                                        {isVideoCompleted ? (
+                                                          <CheckCircleFill size={24} className="text-success" />
+                                                        ) : videoUnlocked ? (
+                                                          <PlayFill size={24} className="text-primary" />
+                                                        ) : (
+                                                          <LockFill size={24} className="text-muted" />
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                  <h6 className="card-title small mb-1">{video.title || `Video ${videoIndex + 1}`}</h6>
+                                                  
+                                                  {videoUnlocked && !isVideoCompleted ? (
+                                                    <div className="d-flex gap-1">
+                                                      <Button 
+                                                        variant="outline-primary" 
+                                                        size="sm"
+                                                        className="flex-fill"
+                                                        onClick={() => handleInlineVideo(video, moduleIndex, videoIndex)}
+                                                      >
+                                                        <PlayFill className="me-1" />
+                                                        Watch Inline
+                                                      </Button>
+                                                      <Button 
+                                                        variant="outline-secondary" 
+                                                        size="sm"
+                                                        onClick={() => {
+                                                          setSelectedVideo({
+                                                            ...video,
+                                                            moduleIndex,
+                                                            videoIndex
+                                                          });
+                                                          setShowVideoModal(true);
+                                                        }}
+                                                      >
+                                                        Modal
+                                                      </Button>
+                                                    </div>
+                                                  ) : isVideoCompleted ? (
+                                                    <Badge bg="success" className="w-100">
+                                                      <CheckCircleFill className="me-1" />
+                                                      Completed
+                                                    </Badge>
+                                                  ) : (
+                                                    <Badge bg="secondary" className="w-100">
+                                                      <LockFill className="me-1" />
+                                                      Locked
+                                                    </Badge>
+                                                  )}
+                                                </Card.Body>
+                                              </Card>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </Card.Body>
+                                  )}
+                                  
+                                  {!moduleUnlocked && (
+                                    <Card.Body>
+                                      <p className="text-muted small mb-0">
+                                        Complete the previous module to unlock this content.
+                                      </p>
+                                    </Card.Body>
+                                  )}
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        ) : training.videos && training.videos.length > 0 ? (
+                          <div className="mb-3">
+                            <h6 className="fw-bold mb-2 text-dark">📹 Videos ({training.videos.length})</h6>
+                            <div className="row g-2">
+                              {training.videos.map((video, index) => {
+                                const isVideoUnlocked = index === 0 || userProgress.completedVideos?.includes(training.videos[index - 1]?._id);
+                                const isVideoCompleted = userProgress.completedVideos?.includes(video._id);
+                                
+                                return (
+                                  <div key={`fallback-video-${uniqueTrainingId}-${index}-${video._id || index}`} className="col-md-4">
+                                    <Card className={`h-100 video-card ${!isVideoUnlocked ? 'opacity-50' : ''}`}>
+                                      <Card.Body className="p-2 text-center">
+                                        <div className="video-thumbnail mb-2">
+                                          <div className="ratio ratio-16x9 bg-light rounded">
+                                            <div className="d-flex align-items-center justify-content-center">
+                                              {isVideoCompleted ? (
+                                                <CheckCircleFill size={24} className="text-success" />
+                                              ) : isVideoUnlocked ? (
+                                                <PlayFill size={24} className="text-primary" />
+                                              ) : (
+                                                <LockFill size={24} className="text-muted" />
+                                              )}
+                                            </div>
+                                          </div>
+                                      </div>
+                                        <h6 className="card-title small mb-1">{video.title || `Video ${index + 1}`}</h6>
+                                        
+                                        {isVideoUnlocked && !isVideoCompleted ? (
+                                          <div className="d-flex gap-1">
+                                        <Button 
+                                          variant="outline-primary" 
+                                          size="sm"
+                                              className="flex-fill"
+                                              onClick={() => handleInlineVideo(video, 0, index)}
+                                            >
+                                              <PlayFill className="me-1" />
+                                              Watch Inline
+                                            </Button>
+                                            <Button 
+                                              variant="outline-secondary" 
+                                              size="sm"
+                                              onClick={() => {
+                                                setSelectedVideo({
+                                                  ...video,
+                                                  moduleIndex: 0,
+                                                  videoIndex: index
+                                                });
+                                                setShowVideoModal(true);
+                                              }}
+                                            >
+                                              Modal
+                                        </Button>
+                                      </div>
+                                        ) : isVideoCompleted ? (
+                                          <Badge bg="success" className="w-100">
+                                            <CheckCircleFill className="me-1" />
+                                            Completed
+                                          </Badge>
+                                        ) : (
+                                          <Badge bg="secondary" className="w-100">
+                                            <LockFill className="me-1" />
+                                            Locked
+                                          </Badge>
+                                        )}
+                                      </Card.Body>
+                                    </Card>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mb-3">
+                            <h6 className="fw-bold mb-2 text-dark">📹 Videos</h6>
+                            <p className="text-muted small mb-0">No videos available for this training.</p>
+                          </div>
+                        )}
+
+                        {/* Progress Tracker */}
+                        <div className="mt-3 mb-3">
+                          <ProgressTracker
+                            modules={training.moduleDetails || []}
+                            userProgress={userProgress}
+                            onVideoComplete={handleVideoComplete}
+                            onModuleComplete={handleModuleComplete}
+                            currentUserId={currentUserId}
+                          />
+                        </div>
 
                         <div className="d-flex justify-content-between align-items-center">
                           <div className="d-flex gap-2">
@@ -552,8 +903,10 @@ const Training = () => {
             <p className="text-muted text-center">No completed trainings yet</p>
           ) : (
             <Row>
-              {getCompletedTrainings().map((training) => (
-                <Col key={training.id} lg={6} className="mb-3">
+              {getCompletedTrainings().map((training, trainingIndex) => {
+                const uniqueCompletedTrainingId = training.id || training._id || `completed-training-${trainingIndex}`;
+                return (
+                  <Col key={`completed-training-${uniqueCompletedTrainingId}-${trainingIndex}`} lg={6} className="mb-3">
                   <Card className="h-100 border-0 shadow-sm bg-light">
                     <Card.Body className="p-4">
                       <div className="d-flex justify-content-between align-items-start mb-3">
@@ -587,7 +940,8 @@ const Training = () => {
                     </Card.Body>
                   </Card>
                 </Col>
-              ))}
+                );
+              })}
             </Row>
           )}
         </div>
@@ -605,16 +959,12 @@ const Training = () => {
         </div>
       </div>
 
-      {/* Video Player */}
+      {/* Video Player Modal */}
       <VideoPlayer
         show={showVideoModal}
         onHide={handleCloseVideoModal}
         video={selectedVideo}
-        onVideoComplete={(video) => {
-          console.log('Video completed:', video);
-          // You can add logic here to mark video as complete
-          // or update training progress
-        }}
+        onVideoComplete={handleVideoComplete}
       />
     </div>
   );
