@@ -8,14 +8,17 @@ import {
   Badge,
   ProgressBar,
   Spinner,
-  Alert
+  Alert,
+  Form
 } from 'react-bootstrap';
 import { 
   getUserAssignedTrainings, 
   getUserMandatoryTrainings,
   testAPIConnection,
   updateTrainingProgress,
-  completeTraining
+  completeTraining,
+  testEndpoints,
+  transformTrainingData
 } from '../api';
 
 const Training = () => {
@@ -25,10 +28,12 @@ const Training = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [apiStatus, setApiStatus] = useState('unknown');
+  const [testUserId, setTestUserId] = useState('user123'); // Allow user to change test ID
+  const [debugInfo, setDebugInfo] = useState('');
 
   // Get user ID from your authentication context
   // For now using a test user ID - replace with actual authenticated user
-  const userId = 'user123'; // Replace with actual user ID from your auth context
+  const userId = testUserId;
 
   useEffect(() => {
     fetchUserTrainings();
@@ -37,15 +42,32 @@ const Training = () => {
   const testConnection = async () => {
     try {
       setApiStatus('testing');
+      setDebugInfo('Testing API connection...');
+      
       const isConnected = await testAPIConnection();
       setApiStatus(isConnected ? 'connected' : 'failed');
       
       if (isConnected) {
+        setDebugInfo('API connection successful! Fetching trainings...');
         await fetchUserTrainings();
+      } else {
+        setDebugInfo('API connection failed. Check the URL and authentication.');
       }
     } catch (err) {
       setApiStatus('failed');
+      setDebugInfo(`Connection test failed: ${err.message}`);
       console.error('Connection test failed:', err);
+    }
+  };
+
+  const testAllEndpoints = async () => {
+    try {
+      setDebugInfo('Testing all available endpoints...');
+      await testEndpoints();
+      setDebugInfo('Endpoint testing completed. Check console for results.');
+    } catch (err) {
+      setDebugInfo(`Endpoint testing failed: ${err.message}`);
+      console.error('Endpoint testing failed:', err);
     }
   };
 
@@ -53,27 +75,37 @@ const Training = () => {
     try {
       setLoading(true);
       setError('');
+      setDebugInfo('Fetching trainings from your API...');
       
-      console.log('Fetching trainings for user:', userId);
+      console.log('🔍 Fetching trainings...');
       
       // Fetch both assigned and mandatory trainings
       const [assignedData, mandatoryData] = await Promise.all([
-        getUserAssignedTrainings(userId),
-        getUserMandatoryTrainings(userId)
+        getUserAssignedTrainings(),
+        getUserMandatoryTrainings()
       ]);
       
-      console.log('Assigned trainings:', assignedData);
-      console.log('Mandatory trainings:', mandatoryData);
+      console.log('📚 Raw assigned trainings:', assignedData);
+      console.log('📚 Raw mandatory trainings:', mandatoryData);
       
-      setAssignedTrainings(assignedData || []);
-      setMandatoryTrainings(mandatoryData || []);
+      // Transform the data to match frontend expectations
+      const transformedAssigned = assignedData.map(transformTrainingData);
+      const transformedMandatory = mandatoryData.map(transformTrainingData);
+      
+      console.log('🔄 Transformed assigned trainings:', transformedAssigned);
+      console.log('🔄 Transformed mandatory trainings:', transformedMandatory);
+      
+      setAssignedTrainings(transformedAssigned || []);
+      setMandatoryTrainings(transformedMandatory || []);
       
       setApiStatus('connected');
+      setDebugInfo(`Successfully fetched ${transformedAssigned?.length || 0} assigned and ${transformedMandatory?.length || 0} mandatory trainings`);
       
     } catch (err) {
-      console.error('Error fetching trainings:', err);
+      console.error('❌ Error fetching trainings:', err);
       setError(`Failed to fetch trainings: ${err.message}`);
       setApiStatus('failed');
+      setDebugInfo(`Error: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -91,7 +123,7 @@ const Training = () => {
 
   const handleUpdateProgress = async (trainingId, newProgress) => {
     try {
-      await updateTrainingProgress(userId, trainingId, newProgress);
+      await updateTrainingProgress(trainingId, newProgress);
       // Refresh trainings to get updated data
       await fetchUserTrainings();
     } catch (error) {
@@ -185,6 +217,47 @@ const Training = () => {
 
       {/* Content */}
       <div className="p-3 bg-light">
+        {/* Debug Interface */}
+        <div className="mb-3 p-3 bg-white border rounded">
+          <h6 className="mb-2 fw-bold">🔧 Debug & Testing</h6>
+          <div className="row g-2 mb-2">
+            <div className="col-md-6">
+              <Form.Group>
+                <Form.Label className="small">Test User ID:</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={testUserId}
+                  onChange={(e) => setTestUserId(e.target.value)}
+                  placeholder="Enter user ID to test"
+                  size="sm"
+                />
+              </Form.Group>
+            </div>
+            <div className="col-md-6 d-flex align-items-end">
+              <Button 
+                variant="outline-secondary" 
+                size="sm" 
+                onClick={() => fetchUserTrainings()}
+                className="me-2"
+              >
+                Test User
+              </Button>
+              <Button 
+                variant="outline-info" 
+                size="sm" 
+                onClick={testAllEndpoints}
+              >
+                Test Endpoints
+              </Button>
+            </div>
+          </div>
+          {debugInfo && (
+            <div className="small text-muted bg-light p-2 rounded">
+              <strong>Debug Info:</strong> {debugInfo}
+            </div>
+          )}
+        </div>
+
         {/* API Status */}
         <div className="mb-3 p-3 bg-white border rounded">
           <div className="d-flex justify-content-between align-items-center mb-2">
