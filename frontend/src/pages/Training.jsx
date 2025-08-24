@@ -778,22 +778,29 @@ const Training = () => {
         videoId = url.split('v=')[1];
       } else if (url.includes('youtu.be/')) {
         videoId = url.split('youtu.be/')[1];
+      } else if (url.includes('youtube.com/embed/')) {
+        videoId = url.split('youtube.com/embed/')[1];
+      } else if (url.includes('youtube.com/v/')) {
+        videoId = url.split('youtube.com/v/')[1];
       }
       
-      // Fix: videoId is an array, we need the first element
-      if (Array.isArray(videoId)) {
-        videoId = videoId;
-      }
-      
+      // Clean video ID - remove any additional parameters
       if (videoId.includes('&')) {
-        videoId = videoId.split('&');
+        videoId = videoId.split('&')[0];
       }
       if (videoId.includes('?')) {
-        videoId = videoId.split('?');
+        videoId = videoId.split('?')[0];
       }
       
-      // Disable controls and seeking for YouTube videos
-      return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&controls=0&disablekb=1&fs=0&start=0`;
+      // Check if it looks like a valid YouTube video ID (11 characters)
+      if (videoId && videoId.length === 11) {
+        const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&controls=1&disablekb=1&fs=0`;
+        console.log('🔍 Generated YouTube embed URL:', embedUrl);
+        return embedUrl;
+      }
+      
+      console.log('⚠️ Invalid YouTube ID, returning original URL');
+      return url;
     }
     
     if (url.match(/\.(mp4|webm|ogg|mov|avi)$/i)) {
