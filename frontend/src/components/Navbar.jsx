@@ -96,6 +96,18 @@ const NavigationBar = () => {
               <i className="fas fa-clipboard-check me-1"></i>
               Assessment
             </Nav.Link>
+            
+            <Nav.Link 
+              href="/lms-sync-test" 
+              className={`fw-semibold me-3 ${isActive('/lms-sync-test') ? 'text-success' : 'text-muted'}`}
+              style={{ 
+                borderBottom: isActive('/lms-sync-test') ? '2px solid #198754' : 'none',
+                paddingBottom: '0.5rem'
+              }}
+            >
+              <i className="fas fa-sync me-1"></i>
+              LMS Sync Test
+            </Nav.Link>
           </Nav>
           
           <div className="d-flex align-items-center">

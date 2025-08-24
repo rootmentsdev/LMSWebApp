@@ -6,6 +6,8 @@ import Login from './pages/Login';
 import Assessment from './pages/Assessment';
 import Training from './pages/Training';
 import TrainingModules from './pages/TrainingModules';
+import LMSTest from './pages/LMSTest';
+import LMSSyncTest from './pages/LMSSyncTest';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -49,6 +51,16 @@ function App() {
             <Route path="/training/:trainingId" element={
               <ProtectedRoute>
                 <TrainingModules />
+              </ProtectedRoute>
+            } />
+            <Route path="/lms-test" element={
+              <ProtectedRoute>
+                <LMSTest />
+              </ProtectedRoute>
+            } />
+            <Route path="/lms-sync-test" element={
+              <ProtectedRoute>
+                <LMSSyncTest />
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />
