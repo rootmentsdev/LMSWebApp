@@ -394,6 +394,15 @@ export const testEndpoints = async () => {
 
 // Data transformation helper to match your frontend expectations
 export const transformTrainingData = (training) => {
+  console.log('🔄 Transforming training data:', {
+    original: {
+      trainingId: training.trainingId,
+      trainingName: training.trainingName,
+      assignedFor: training.assignedFor,
+      Assignedfor: training.Assignedfor
+    }
+  });
+  
   return {
     id: training._id || training.trainingId,
     title: training.trainingName || training.trainingTitle,
@@ -406,7 +415,8 @@ export const transformTrainingData = (training) => {
     completedDate: (parseFloat(training.averageCompletionPercentage) >= 100) ? new Date() : null,
     modules: training.modules || [],
     numberOfModules: training.numberOfModules || 0,
-    assignedFor: training.Assignedfor || [],
+    // Fix: Check both field names to handle API variations
+    assignedFor: training.assignedFor || training.Assignedfor || [],
     createdBy: training.createdBY,
     createdAt: training.createdDate,
     updatedAt: training.editedDate,

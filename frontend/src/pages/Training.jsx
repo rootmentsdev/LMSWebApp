@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { config } from '../config';
 import { 
   Container, 
   Row, 
@@ -35,7 +36,6 @@ import {
 } from '../api';
 import VideoPlayer from '../components/VideoPlayer';
 
-
 const Training = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('assigned');
@@ -56,10 +56,42 @@ const Training = () => {
   const [videoProgress, setVideoProgress] = useState({}); // Track video watch progress
   const [videoStartTime, setVideoStartTime] = useState({}); // Track when video started
   const [youtubeProgressTimer, setYoutubeProgressTimer] = useState({}); // Timer for YouTube progress simulation
+  const [videoWatchedTime, setVideoWatchedTime] = useState({}); // Track actual watched time
+  const [lastValidTime, setLastValidTime] = useState({}); // Track last valid playback time
+  const [videoSkipAttempts, setVideoSkipAttempts] = useState({}); // Track skip attempts
+
+  // Get current employee data for filtering trainings
+  const [currentEmployee, setCurrentEmployee] = useState(null);
+
+  // Load current employee data from localStorage
+  useEffect(() => {
+    const storedEmployeeData = localStorage.getItem("employeeData");
+    if (storedEmployeeData) {
+      try {
+        const employeeData = JSON.parse(storedEmployeeData);
+        setCurrentEmployee(employeeData);
+        console.log('👤 Current employee loaded:', employeeData);
+      } catch (err) {
+        console.error('Error parsing employee data:', err);
+        // Clear invalid data and redirect to login
+        localStorage.removeItem("employeeData");
+        navigate('/login');
+      }
+    } else {
+      // Redirect to login if no employee data found
+      console.log('❌ No employee data found, redirecting to login...');
+      navigate('/login');
+    }
+  }, [navigate]);
 
   useEffect(() => {
+    if (currentEmployee && currentEmployee.employeeId) {
+      console.log('👤 Employee data loaded, fetching trainings...');
     fetchUserTrainings();
-  }, []);
+    } else if (currentEmployee === null) {
+      console.log('❌ No employee data, not fetching trainings');
+    }
+  }, [currentEmployee]);
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -123,7 +155,26 @@ const Training = () => {
       setError('');
       setDebugInfo('Fetching trainings from your API...');
       
-      console.log('🔍 Fetching trainings...');
+        if (!currentEmployee) {
+    setError('Employee data not available. Please login again.');
+    setLoading(false);
+    return;
+  }
+  
+  // Check if user is logged in
+  const isLoggedIn = localStorage.getItem("employeeData");
+  if (!isLoggedIn) {
+    setError('Please login to view your trainings.');
+    setLoading(false);
+    return;
+  }
+      
+      console.log('🔍 Fetching trainings for employee:', currentEmployee.employeeId);
+      console.log('👤 Employee details:', {
+        employeeId: currentEmployee.employeeId,
+        designation: currentEmployee.role,
+        branch: currentEmployee.Store
+      });
       
       const [assignedData, mandatoryData] = await Promise.all([
         getUserAssignedTrainings(),
@@ -133,19 +184,181 @@ const Training = () => {
       console.log('📚 Raw assigned trainings:', assignedData);
       console.log('📚 Raw mandatory trainings:', mandatoryData);
       
-      const transformedAssigned = assignedData.map(transformTrainingData);
-      const transformedMandatory = mandatoryData.map(transformTrainingData);
+      // Filter trainings based on current employee's criteria
+      const filterTrainingsByEmployee = (trainings) => {
+        if (!Array.isArray(trainings)) return [];
+        
+        console.log('🔍 Starting to filter trainings for employee:', currentEmployee.employeeId);
+        console.log('🔍 Total trainings to filter:', trainings.length);
+        
+        // Log current employee data structure
+        console.log('🔍 Current Employee Data Structure:', {
+          employeeId: currentEmployee.employeeId,
+          role: currentEmployee.role,
+          Store: currentEmployee.Store,
+          name: currentEmployee.name,
+          // Log all available properties
+          allProperties: Object.keys(currentEmployee),
+          fullEmployeeData: currentEmployee
+        });
+        
+        const filtered = trainings.filter(training => {
+          // Log the *transformed* training structure to debug
+          console.log('🔍 FILTERING TRANSFORMED DATA:', {
+            id: training.id,
+            title: training.title,
+            assignedFor: training.assignedFor, // This will now be consistently present
+            designation: training.designation, // This will now be consistently present
+            branch: training.branch,           // This will now be consistently present
+            // Show the actual values to confirm transformation worked
+            rawAssignedFor: training.assignedFor,
+            rawDesignation: training.designation,
+            rawBranch: training.branch
+          });
+          
+          // Check if training is assigned to this specific employee
+          // Try multiple possible field names for assignment
+          const isAssignedToEmployee = (
+            // Check assignedTo field
+            (training.assignedTo && 
+             (training.assignedTo === currentEmployee.employeeId ||
+              (Array.isArray(training.assignedTo) && training.assignedTo.includes(currentEmployee.employeeId)))) ||
+            // Check assignedFor field (from the transformed data) - this can contain employee IDs, roles, or other criteria
+            (training.assignedFor && Array.isArray(training.assignedFor) && 
+             training.assignedFor.some(assignment => {
+               // Check if it's an employee ID assignment
+               if (typeof assignment === 'string' && assignment.startsWith('Emp')) {
+                 return assignment === currentEmployee.employeeId;
+               }
+               // Check if it's a role/designation assignment (case-insensitive)
+               if (typeof assignment === 'string') {
+                 return assignment.toLowerCase() === currentEmployee.role.toLowerCase();
+               }
+               // Check if it's an object assignment with employeeId or role
+               if (typeof assignment === 'object' && assignment !== null) {
+                 return (assignment.employeeId === currentEmployee.employeeId) ||
+                        (assignment.role && assignment.role.toLowerCase() === currentEmployee.role.toLowerCase());
+               }
+               return false;
+             })) ||
+            // Check assignedUsers field (from your backend model)
+            (training.assignedUsers && Array.isArray(training.assignedUsers) &&
+             training.assignedUsers.some(user => 
+               user.userId === currentEmployee.employeeId ||
+               user.employeeId === currentEmployee.employeeId
+             ))
+          );
+          
+          // Check if training matches employee's designation/role
+          // Try multiple possible field names for role/designation
+          const matchesDesignation = (
+            // Check designation field
+            (training.designation && 
+             (training.designation === currentEmployee.role ||
+              (Array.isArray(training.designation) && training.designation.includes(currentEmployee.role)))) ||
+            // Check role field
+            (training.role && 
+             (training.role === currentEmployee.role ||
+              (Array.isArray(training.role) && training.role.includes(currentEmployee.role)))) ||
+            // Check if assignedFor contains role-based assignment (this is the key fix!)
+            (training.assignedFor && Array.isArray(training.assignedFor) &&
+             training.assignedFor.some(assignment => {
+               // Check if it's a string role assignment
+               if (typeof assignment === 'string') {
+                 return assignment.toLowerCase() === currentEmployee.role.toLowerCase();
+               }
+               // Check if it's an object assignment with role/designation
+               if (typeof assignment === 'object' && assignment !== null) {
+                 return assignment.role === currentEmployee.role ||
+                        assignment.designation === currentEmployee.role;
+               }
+               return false;
+             }))
+          );
+          
+          // Check if training matches employee's branch/store
+          // Try multiple possible field names for branch/store
+          const matchesBranch = (
+            // Check branch field
+            (training.branch && 
+             (training.branch === currentEmployee.Store ||
+              (Array.isArray(training.branch) && training.branch.includes(currentEmployee.Store)))) ||
+            // Check store field
+            (training.store && 
+             (training.store === currentEmployee.Store ||
+              (Array.isArray(training.store) && training.store.includes(currentEmployee.Store)))) ||
+            // Check Store field (capitalized)
+            (training.Store && 
+             (training.Store === currentEmployee.Store ||
+              (Array.isArray(training.Store) && training.Store.includes(currentEmployee.Store)))) ||
+            // Check if assignedFor contains branch-based assignment
+            (training.assignedFor && Array.isArray(training.assignedFor) &&
+             training.assignedFor.some(assignment => {
+               // Check if it's a string branch assignment
+               if (typeof assignment === 'string') {
+                 return assignment.toLowerCase() === currentEmployee.Store.toLowerCase();
+               }
+               // Check if it's an object assignment with branch/store
+               if (typeof assignment === 'object' && assignment !== null) {
+                 return assignment.branch === currentEmployee.Store ||
+                        assignment.store === currentEmployee.Store ||
+                        assignment.Store === currentEmployee.Store;
+               }
+               return false;
+             }))
+          );
+          
+          // Training should match at least one of these criteria
+          const isRelevant = isAssignedToEmployee || matchesDesignation || matchesBranch;
+          
+          console.log(`🔍 Training "${training.title || 'Untitled'}" filter results:`, {
+            trainingId: training.id, // Use transformed 'id'
+            assignedFor: training.assignedFor, // Use transformed 'assignedFor'
+            designation: training.designation, // Use transformed 'designation'
+            branch: training.branch,           // Use transformed 'branch'
+            employeeId: currentEmployee.employeeId,
+            employeeRole: currentEmployee.role,
+            employeeBranch: currentEmployee.Store,
+            isAssignedToEmployee,
+            matchesDesignation,
+            matchesBranch,
+            isRelevant
+          });
+          
+          return isRelevant;
+        });
+        
+        console.log('🔍 Filtering complete. Original count:', trainings.length, 'Filtered count:', filtered.length);
+        return filtered;
+      };
       
-      console.log('🔄 Transformed assigned trainings:', transformedAssigned);
-      console.log('🔄 Transformed mandatory trainings:', transformedMandatory);
+      // --- Apply transformation BEFORE filtering ---
+      const transformedAssignedData = await Promise.all(assignedData.map(t => transformTrainingData(t)));
+      const transformedMandatoryData = await Promise.all(mandatoryData.map(t => transformTrainingData(t)));
       
+      console.log('🔄 TRANSFORMATION COMPLETE - Sample of transformed data:');
+      console.log('🔄 First transformed assigned training:', transformedAssignedData[0]);
+      console.log('🔄 First transformed mandatory training:', transformedMandatoryData[0]);
+      
+      // Now filter the *transformed* data
+      const filteredAssigned = filterTrainingsByEmployee(transformedAssignedData);
+      const filteredMandatory = filterTrainingsByEmployee(transformedMandatoryData);
+      
+      console.log('🔍 Filtered assigned trainings (after transformation):', filteredAssigned);
+      console.log('🔍 Filtered mandatory trainings (after transformation):', filteredMandatory);
+      
+      // These are already transformed and filtered, so no further transformation needed
+      setAssignedTrainings(filteredAssigned);
+      setMandatoryTrainings(filteredMandatory);
+      
+      // Enhance with video data (if applicable)
       try {
         const enhancedAssigned = await Promise.all(
-          transformedAssigned.map(training => getTrainingWithModules(training))
+          filteredAssigned.map(training => getTrainingWithModules(training))
         );
         
         const enhancedMandatory = await Promise.all(
-          transformedMandatory.map(training => getTrainingWithModules(training))
+          filteredMandatory.map(training => getTrainingWithModules(training))
         );
         
         console.log('🎥 Enhanced assigned trainings with videos:', enhancedAssigned);
@@ -155,13 +368,20 @@ const Training = () => {
         setMandatoryTrainings(enhancedMandatory || []);
       } catch (enhancementError) {
         console.error('❌ Error enhancing trainings:', enhancementError);
-        setAssignedTrainings(transformedAssigned || []);
-        setMandatoryTrainings(transformedMandatory || []);
+        setAssignedTrainings(filteredAssigned || []);
+        setMandatoryTrainings(filteredMandatory || []);
         setDebugInfo('Videos may not display due to enhancement error. Check console for details.');
       }
       
       setApiStatus('connected');
-      setDebugInfo(`Successfully fetched ${transformedAssigned?.length || 0} assigned and ${transformedMandatory?.length || 0} mandatory trainings`);
+      const totalOriginal = (assignedData?.length || 0) + (mandatoryData?.length || 0);
+      const totalFiltered = (filteredAssigned?.length || 0) + (filteredMandatory?.length || 0);
+      
+      if (totalOriginal > totalFiltered) {
+        setDebugInfo(`✅ Fetched ${totalOriginal} total trainings, filtered to ${totalFiltered} relevant trainings for ${currentEmployee.employeeId} (${currentEmployee.role} at ${currentEmployee.Store})`);
+      } else {
+        setDebugInfo(`✅ Fetched ${totalFiltered} trainings for ${currentEmployee.employeeId} (${currentEmployee.role} at ${currentEmployee.Store})`);
+      }
       
     } catch (err) {
       console.error('❌ Error fetching trainings:', err);
@@ -294,6 +514,21 @@ const Training = () => {
       return;
     }
     
+    // Initialize tracking for this video
+    const videoKey = video._id;
+    setVideoWatchedTime(prev => ({
+      ...prev,
+      [videoKey]: 0
+    }));
+    setLastValidTime(prev => ({
+      ...prev,
+      [videoKey]: 0
+    }));
+    setVideoSkipAttempts(prev => ({
+      ...prev,
+      [videoKey]: 0
+    }));
+    
     setInlineVideo({
       ...video,
       moduleIndex,
@@ -314,28 +549,133 @@ const Training = () => {
         return newTimers;
       });
     }
+    
+    // Clean up video tracking
+    if (inlineVideo && inlineVideo._id) {
+      const videoKey = inlineVideo._id;
+      setVideoWatchedTime(prev => {
+        const newState = { ...prev };
+        delete newState[videoKey];
+        return newState;
+      });
+      setLastValidTime(prev => {
+        const newState = { ...prev };
+        delete newState[videoKey];
+        return newState;
+      });
+      setVideoSkipAttempts(prev => {
+        const newState = { ...prev };
+        delete newState[videoKey];
+        return newState;
+      });
+    }
+    
     setInlineVideo(null);
   };
 
-  // Start YouTube progress simulation
+  // Handle video seeking prevention
+  const handleVideoSeeking = (e, videoKey) => {
+    const video = e.target;
+    const lastValid = lastValidTime[videoKey] || 0;
+    
+    console.log('🚫 Seeking attempt detected:', {
+      currentTime: video.currentTime,
+      lastValidTime: lastValid,
+      difference: video.currentTime - lastValid
+    });
+    
+    // If user tries to seek forward more than 2 seconds, reset to last valid time
+    if (video.currentTime > lastValid + 2) {
+      console.log('🚫 Preventing forward seeking, resetting to:', lastValid);
+      video.currentTime = lastValid;
+      
+      // Track skip attempts
+      setVideoSkipAttempts(prev => ({
+        ...prev,
+        [videoKey]: (prev[videoKey] || 0) + 1
+      }));
+      
+      // Show warning after multiple attempts
+      const attempts = videoSkipAttempts[videoKey] || 0;
+      if (attempts >= 2) {
+        alert('⚠️ Please watch the complete video without skipping. Fast forwarding is not allowed.');
+      }
+      
+      return;
+    }
+    
+    // Allow backward seeking (replay)
+    if (video.currentTime < lastValid) {
+      console.log('✅ Allowing backward seeking (replay)');
+      setLastValidTime(prev => ({
+        ...prev,
+        [videoKey]: video.currentTime
+      }));
+    }
+  };
+
+  // Handle video time update with anti-skip logic
+  const handleVideoTimeUpdate = (e, videoKey) => {
+    const video = e.target;
+    const currentTime = video.currentTime;
+    const lastValid = lastValidTime[videoKey] || 0;
+    
+    // Only update if the time difference is reasonable (not a big jump)
+    if (currentTime >= lastValid && currentTime - lastValid <= 2) {
+      setLastValidTime(prev => ({
+        ...prev,
+        [videoKey]: currentTime
+      }));
+      
+      // Update watched time
+      setVideoWatchedTime(prev => ({
+        ...prev,
+        [videoKey]: Math.max(prev[videoKey] || 0, currentTime)
+      }));
+      
+      // Update progress
+      const progress = (currentTime / video.duration) * 100;
+      setVideoProgress(prev => ({
+        ...prev,
+        [videoKey]: progress
+      }));
+    }
+  };
+
+  // Start YouTube progress simulation with anti-skip logic
   const startYoutubeProgressSimulation = (videoId) => {
     // Clear any existing timer
     if (youtubeProgressTimer[videoId]) {
       clearInterval(youtubeProgressTimer[videoId]);
     }
     
-    // Start a timer that simulates progress every 2 seconds
+    let watchedSeconds = 0;
+    const requiredWatchTime = 90; // Minimum 90 seconds for YouTube videos
+    
+    // Start a timer that simulates progress every second
     const timer = setInterval(() => {
-      setVideoProgress(prev => {
-        const currentProgress = prev[videoId] || 0;
-        // Simulate progress: increase by 5% every 2 seconds, max 100%
-        const newProgress = Math.min(currentProgress + 5, 100);
-        return {
-          ...prev,
-          [videoId]: newProgress
-        };
+      watchedSeconds += 1;
+      
+      setVideoWatchedTime(prev => ({
+        ...prev,
+        [videoId]: watchedSeconds
+      }));
+      
+      // Simulate progress based on watched time (not total duration)
+      // We'll assume a minimum video length and calculate progress
+      const simulatedProgress = Math.min((watchedSeconds / requiredWatchTime) * 100, 100);
+      
+      setVideoProgress(prev => ({
+        ...prev,
+        [videoId]: simulatedProgress
+      }));
+      
+      console.log('📊 YouTube Progress:', {
+        watchedSeconds,
+        progress: simulatedProgress,
+        videoId
       });
-    }, 2000);
+    }, 1000);
     
     setYoutubeProgressTimer(prev => ({
       ...prev,
@@ -343,50 +683,88 @@ const Training = () => {
     }));
   };
 
-  // Check if video can be marked as complete (must be watched from start to finish)
+  // Enhanced video completion check with anti-skip validation
   const canMarkVideoComplete = (video) => {
     if (!video || !video._id) return false;
     
     const videoKey = video._id;
-    const progress = videoProgress[videoKey];
+    const progress = videoProgress[videoKey] || 0;
     const startTime = videoStartTime[videoKey];
+    const watchedTime = videoWatchedTime[videoKey] || 0;
+    const skipAttempts = videoSkipAttempts[videoKey] || 0;
     
     console.log('🔍 Checking completion for video:', videoKey);
     console.log('🔍 Progress:', progress);
+    console.log('🔍 Watched time:', watchedTime);
     console.log('🔍 Start time:', startTime);
-    console.log('🔍 Current time:', Date.now());
+    console.log('🔍 Skip attempts:', skipAttempts);
     
-    // For YouTube videos, we use a time-based approach
+    // For YouTube videos, use time-based approach with stricter validation
     if (video.videoUri && (video.videoUri.includes('youtube.com') || video.videoUri.includes('youtu.be'))) {
       if (!startTime) {
         console.log('❌ No start time for YouTube video');
         return false;
       }
       
-      const watchDuration = Date.now() - startTime;
-      const minimumWatchTime = 60000; // 1 minute for YouTube videos
-      const canComplete = watchDuration >= minimumWatchTime;
+      const totalWatchDuration = Date.now() - startTime;
+      const minimumRealTime = 90000; // 90 seconds minimum real time
+      const minimumWatchedTime = 90; // 90 seconds minimum tracked time
       
-      console.log('🔍 YouTube video - Watch duration:', watchDuration, 'ms');
-      console.log('🔍 YouTube video - Minimum time:', minimumWatchTime, 'ms');
-      console.log('🔍 YouTube video - Can complete:', canComplete);
+      // Check for too many skip attempts
+      if (skipAttempts > 5) {
+        console.log('❌ Too many skip attempts detected');
+        return false;
+      }
+      
+      const canComplete = totalWatchDuration >= minimumRealTime && watchedTime >= minimumWatchedTime;
+      
+      console.log('🔍 YouTube video validation:', {
+        totalWatchDuration,
+        minimumRealTime,
+        watchedTime,
+        minimumWatchedTime,
+        skipAttempts,
+        canComplete
+      });
       
       return canComplete;
     }
     
-    // For regular videos, use progress-based approach
+    // For regular videos, use enhanced progress and time validation
     if (!progress || !startTime) {
       console.log('❌ Missing progress or start time for regular video');
       return false;
     }
     
-    const watchDuration = Date.now() - startTime;
-    const minimumWatchTime = 30000; // 30 seconds
-    const canComplete = progress >= 80 && watchDuration >= minimumWatchTime;
+    const totalWatchDuration = Date.now() - startTime;
+    const minimumWatchTime = 45000; // 45 seconds minimum
+    const minimumProgress = 90; // 90% progress required
     
-    console.log('🔍 Regular video - Progress:', progress, '%');
-    console.log('🔍 Regular video - Watch duration:', watchDuration, 'ms');
-    console.log('🔍 Regular video - Can complete:', canComplete);
+    // Check for excessive skip attempts
+    if (skipAttempts > 5) {
+      console.log('❌ Too many skip attempts detected for regular video');
+      return false;
+    }
+    
+    // Ensure watched time is reasonable compared to progress
+    const expectedWatchTime = (progress / 100) * 60; // Assume 60 second video
+    const watchTimeValid = watchedTime >= (expectedWatchTime * 0.8); // Allow some tolerance
+    
+    const canComplete = progress >= minimumProgress && 
+                       totalWatchDuration >= minimumWatchTime && 
+                       watchTimeValid;
+    
+    console.log('🔍 Regular video validation:', {
+      progress,
+      minimumProgress,
+      totalWatchDuration,
+      minimumWatchTime,
+      watchedTime,
+      expectedWatchTime,
+      watchTimeValid,
+      skipAttempts,
+      canComplete
+    });
     
     return canComplete;
   };
@@ -404,17 +782,18 @@ const Training = () => {
       
       // Fix: videoId is an array, we need the first element
       if (Array.isArray(videoId)) {
-        videoId = videoId[0];
+        videoId = videoId;
       }
       
       if (videoId.includes('&')) {
-        videoId = videoId.split('&')[0];
+        videoId = videoId.split('&');
       }
       if (videoId.includes('?')) {
-        videoId = videoId.split('?')[0];
+        videoId = videoId.split('?');
       }
       
-             return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&controls=1&disablekb=1&fs=0`;
+      // Disable controls and seeking for YouTube videos
+      return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&controls=0&disablekb=1&fs=0&start=0`;
     }
     
     if (url.match(/\.(mp4|webm|ogg|mov|avi)$/i)) {
@@ -596,6 +975,66 @@ const Training = () => {
     setSelectedTraining(null);
   };
 
+  const handleLogout = () => {
+    // Clear all local storage data
+    localStorage.removeItem("employeeData");
+    localStorage.removeItem("loginStatus");
+    
+    // Clear user progress
+    if (currentUserId) {
+      localStorage.removeItem(`userProgress_${currentUserId}`);
+    }
+    
+    // Reset component state
+    setCurrentEmployee(null);
+    setAssignedTrainings([]);
+    setMandatoryTrainings([]);
+    setUserProgress({});
+    
+    // Navigate to login
+    navigate('/login');
+  };
+
+  const handleRefreshEmployeeData = () => {
+    console.log('🔄 Refreshing employee data...');
+    const storedEmployeeData = localStorage.getItem("employeeData");
+    if (storedEmployeeData) {
+      try {
+        const employeeData = JSON.parse(storedEmployeeData);
+        setCurrentEmployee(employeeData);
+        console.log('👤 Employee data refreshed:', employeeData);
+        // Fetch trainings again
+        fetchUserTrainings();
+      } catch (err) {
+        console.error('Error parsing refreshed employee data:', err);
+        setError('Failed to refresh employee data. Please login again.');
+      }
+    } else {
+      setError('No employee data found. Please login again.');
+    }
+  };
+
+  // Check if user is authenticated
+  if (!currentEmployee) {
+    return (
+      <div className="d-flex flex-column justify-content-center align-items-center vh-100 bg-light">
+        <div className="text-center">
+          <div className="text-muted mb-3">🔒</div>
+          <h5 className="text-muted">Authentication Required</h5>
+          <p className="text-muted">Please login to view your trainings.</p>
+          <div className="d-flex gap-2 justify-content-center">
+            <Button variant="primary" onClick={() => navigate('/login')}>
+              Go to Login
+            </Button>
+            <Button variant="outline-secondary" onClick={handleRefreshEmployeeData}>
+              🔄 Refresh Session
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="d-flex flex-column justify-content-center align-items-center vh-100 bg-light">
@@ -635,12 +1074,12 @@ const Training = () => {
           <Row className="g-4">
             {selectedTraining.moduleDetails && selectedTraining.moduleDetails.map((module, moduleIndex) => {
               const moduleUnlocked = isModuleUnlocked(moduleIndex, selectedTraining);
-                                            const completedVideos = module.videos ? module.videos.filter(video => {
-                                // Use training-specific progress
-                                const trainingProgressKey = `training_${selectedTraining._id || selectedTraining.id}`;
-                                const trainingProgress = userProgress[trainingProgressKey] || {};
-                                return trainingProgress.completedVideos?.includes(video._id);
-                              }).length : 0;
+              const completedVideos = module.videos ? module.videos.filter(video => {
+                // Use training-specific progress
+                const trainingProgressKey = `training_${selectedTraining._id || selectedTraining.id}`;
+                const trainingProgress = userProgress[trainingProgressKey] || {};
+                return trainingProgress.completedVideos?.includes(video._id);
+              }).length : 0;
               const totalVideos = module.videos ? module.videos.length : 0;
               const moduleProgress = totalVideos > 0 ? (completedVideos / totalVideos) * 100 : 0;
 
@@ -713,14 +1152,14 @@ const Training = () => {
                                               {video.title || `Topic ${videoIndex + 1}`}
                                             </h6>
                                             <small className="text-muted">
-                                              Duration: {video.duration || '15'} min
+                                              Duration: {video.duration || '15'} min | 🚫 No Fast Forward
                                             </small>
                                           </div>
                                           <div>
                                             {isVideoCompleted ? (
                                               <Badge bg="success">
                                                 <CheckCircleFill className="me-1" />
-                                                Resume
+                                                Completed
                                               </Badge>
                                             ) : videoUnlocked ? (
                                               <Button 
@@ -753,11 +1192,14 @@ const Training = () => {
                               className="flex-grow-1"
                               onClick={() => {
                                 if (module.videos && module.videos.length > 0) {
-                                  const firstUncompletedVideo = module.videos.find(video => 
-                                    !userProgress.completedVideos?.includes(video._id)
-                                  );
+                                  const firstUncompletedVideo = module.videos.find(video => {
+                                    const trainingProgressKey = `training_${selectedTraining._id || selectedTraining.id}`;
+                                    const trainingProgress = userProgress[trainingProgressKey] || {};
+                                    return !trainingProgress.completedVideos?.includes(video._id);
+                                  });
                                   if (firstUncompletedVideo) {
-                                    handleInlineVideo(firstUncompletedVideo, moduleIndex, 0);
+                                    const videoIndex = module.videos.findIndex(v => v._id === firstUncompletedVideo._id);
+                                    handleInlineVideo(firstUncompletedVideo, moduleIndex, videoIndex);
                                   }
                                 }
                               }}
@@ -782,122 +1224,115 @@ const Training = () => {
           </Row>
         </Container>
 
-        {/* Inline Video Player */}
+        {/* Inline Video Player with Anti-Skip Protection */}
         {inlineVideo && (
           <div className="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex align-items-center justify-content-center" style={{ zIndex: 1050 }}>
             <div className="bg-white rounded shadow" style={{ width: '90%', maxWidth: '800px' }}>
-                             <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
-                 <h5 className="mb-0">🎬 {inlineVideo.title || 'Video'}</h5>
-                 <Button 
-                   variant="light" 
-                   size="sm" 
-                   onClick={closeInlineVideo}
-                 >
-                   <X />
-                 </Button>
-               </div>
-               {/* Debug Info */}
-               <div className="px-3 py-2 bg-light border-bottom small">
-                 <div className="row">
-                   <div className="col-md-6">
-                     <strong>Video URI:</strong> {inlineVideo.videoUri || 'Not available'}
-                   </div>
-                   <div className="col-md-6">
-                     <strong>URL:</strong> {inlineVideo.url || 'Not available'}
-                   </div>
-                 </div>
-                 <div className="row mt-1">
-                   <div className="col-md-6">
-                     <strong>Module:</strong> {inlineVideo.moduleIndex + 1}
-                   </div>
-                   <div className="col-md-6">
-                     <strong>Video:</strong> {inlineVideo.videoIndex + 1}
-                   </div>
-                 </div>
-               </div>
-                             <div className="ratio ratio-16x9">
-                 {inlineVideo.videoUri && (
-                   inlineVideo.videoUri.includes('youtube.com') || inlineVideo.videoUri.includes('youtu.be') ? (
-                                           <iframe
-                        src={processVideoUrl(inlineVideo.videoUri)}
-                        title={inlineVideo.title || 'Video'}
-                        frameBorder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowFullScreen
-                        style={{ border: 'none' }}
-                        onLoad={() => {
-                          // Track when YouTube video starts
-                          const videoKey = inlineVideo._id;
-                          setVideoStartTime(prev => ({
-                            ...prev,
-                            [videoKey]: Date.now()
-                          }));
-                          // Start progress simulation for YouTube
-                          startYoutubeProgressSimulation(videoKey);
-                        }}
-                        onError={(e) => {
-                          console.error('YouTube iframe error:', e);
-                          setError('Failed to load YouTube video. Please check the URL.');
-                        }}
-                      />
-                   ) : (
-                     <video
-                       controls
-                       autoPlay
-                       className="w-100 h-100"
-                       style={{ objectFit: 'contain' }}
-                       onLoadStart={() => {
-                         // Track when video starts
-                         const videoKey = inlineVideo._id;
-                         setVideoStartTime(prev => ({
-                           ...prev,
-                           [videoKey]: Date.now()
-                         }));
-                       }}
-                       onTimeUpdate={(e) => {
-                         // Track video progress
-                         const video = e.target;
-                         const progress = (video.currentTime / video.duration) * 100;
-                         const videoKey = inlineVideo._id;
-                         setVideoProgress(prev => ({
-                           ...prev,
-                           [videoKey]: progress
-                         }));
-                       }}
-                       onError={(e) => {
-                         console.error('Video playback error:', e);
-                         setError('Failed to load video. Please check the video file.');
-                       }}
-                     >
-                       <source src={inlineVideo.videoUri} type="video/mp4" />
-                       <source src={inlineVideo.videoUri} type="video/webm" />
-                       <source src={inlineVideo.videoUri} type="video/ogg" />
-                       Your browser does not support the video tag.
-                     </video>
-                   )
-                 )}
-                 {!inlineVideo.videoUri && (
-                   <div className="d-flex align-items-center justify-content-center bg-light">
-                     <div className="text-center p-4">
-                       <div className="text-muted mb-2">🎬</div>
-                       <p className="text-muted mb-0">Video URL not available</p>
-                       <small className="text-muted">Please check with your administrator</small>
-                       <div className="mt-2">
-                         <Button 
-                           variant="outline-primary" 
-                           size="sm"
-                           onClick={() => {
-                             console.log('Video debug info:', inlineVideo);
-                             alert(`Video Debug Info:\nTitle: ${inlineVideo.title}\nURI: ${inlineVideo.videoUri}\nURL: ${inlineVideo.url}`);
-                           }}
-                         >
-                           Debug Info
-                         </Button>
-                       </div>
-                     </div>
-                   </div>
-                 )}
-               </div>
+              <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
+                <h5 className="mb-0">🎬 {inlineVideo.title || 'Video'}</h5>
+                <Button 
+                  variant="light" 
+                  size="sm" 
+                  onClick={closeInlineVideo}
+                >
+                  <X />
+                </Button>
+              </div>
+              
+              {/* Warning Banner */}
+              <div className="px-3 py-2 bg-warning bg-opacity-10 border-bottom">
+                <div className="d-flex align-items-center">
+                  <span className="me-2">⚠️</span>
+                  <small className="fw-bold text-warning">
+                    Anti-Skip Protection Active: You must watch the complete video without fast forwarding
+                  </small>
+                </div>
+              </div>
+
+              {/* Debug Info */}
+              <div className="px-3 py-2 bg-light border-bottom small">
+                <div className="row">
+                  <div className="col-md-6">
+                    <strong>Watched Time:</strong> {Math.round(videoWatchedTime[inlineVideo._id] || 0)}s
+                  </div>
+                  <div className="col-md-6">
+                    <strong>Skip Attempts:</strong> {videoSkipAttempts[inlineVideo._id] || 0}
+                  </div>
+                </div>
+              </div>
+
+              <div className="ratio ratio-16x9">
+                {inlineVideo.videoUri && (
+                  inlineVideo.videoUri.includes('youtube.com') || inlineVideo.videoUri.includes('youtu.be') ? (
+                    <iframe
+                      src={processVideoUrl(inlineVideo.videoUri)}
+                      title={inlineVideo.title || 'Video'}
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      style={{ border: 'none', pointerEvents: 'none' }} // Disable interaction
+                      onLoad={() => {
+                        // Track when YouTube video starts
+                        const videoKey = inlineVideo._id;
+                        setVideoStartTime(prev => ({
+                          ...prev,
+                          [videoKey]: Date.now()
+                        }));
+                        // Start progress simulation for YouTube
+                        startYoutubeProgressSimulation(videoKey);
+                      }}
+                      onError={(e) => {
+                        console.error('YouTube iframe error:', e);
+                        setError('Failed to load YouTube video. Please check the URL.');
+                      }}
+                    />
+                  ) : (
+                    <video
+                      controls={false} // Disable controls to prevent seeking
+                      autoPlay
+                      className="w-100 h-100"
+                      style={{ objectFit: 'contain' }}
+                      controlsList="nodownload nofullscreen noremoteplayback" // Additional restrictions
+                      disablePictureInPicture
+                      onLoadStart={() => {
+                        // Track when video starts
+                        const videoKey = inlineVideo._id;
+                        setVideoStartTime(prev => ({
+                          ...prev,
+                          [videoKey]: Date.now()
+                        }));
+                        setLastValidTime(prev => ({
+                          ...prev,
+                          [videoKey]: 0
+                        }));
+                      }}
+                      onTimeUpdate={(e) => handleVideoTimeUpdate(e, inlineVideo._id)}
+                      onSeeking={(e) => handleVideoSeeking(e, inlineVideo._id)}
+                      onSeeked={(e) => handleVideoSeeking(e, inlineVideo._id)}
+                      onError={(e) => {
+                        console.error('Video playback error:', e);
+                        setError('Failed to load video. Please check the video file.');
+                      }}
+                      // Prevent right-click context menu
+                      onContextMenu={(e) => e.preventDefault()}
+                    >
+                      <source src={inlineVideo.videoUri} type="video/mp4" />
+                      <source src={inlineVideo.videoUri} type="video/webm" />
+                      <source src={inlineVideo.videoUri} type="video/ogg" />
+                      Your browser does not support the video tag.
+                    </video>
+                  )
+                )}
+                {!inlineVideo.videoUri && (
+                  <div className="d-flex align-items-center justify-content-center bg-light">
+                    <div className="text-center p-4">
+                      <div className="text-muted mb-2">🎬</div>
+                      <p className="text-muted mb-0">Video URL not available</p>
+                      <small className="text-muted">Please check with your administrator</small>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
               <div className="p-3 border-top">
                 <div className="d-flex justify-content-between align-items-center">
                   <div>
@@ -905,54 +1340,39 @@ const Training = () => {
                       Module {inlineVideo.moduleIndex + 1}, Video {inlineVideo.videoIndex + 1}
                     </small>
                   </div>
-                                     <div className="d-flex align-items-center gap-2">
-                                           {canMarkVideoComplete(inlineVideo) ? (
-                        <Button 
-                          variant="success" 
-                          size="sm"
-                          onClick={() => {
-                            handleVideoComplete(inlineVideo, inlineVideo.moduleIndex, inlineVideo.videoIndex);
-                            closeInlineVideo();
-                          }}
-                        >
-                          <CheckCircleFill className="me-1" />
-                          Mark Complete
-                        </Button>
-                      ) : (
-                        <div className="text-center">
-                          <div className="text-muted small mb-1">
-                            ⏱️ Watch the complete video to unlock completion
-                          </div>
-                                                  <div className="text-muted small">
-                          Progress: {Math.round(videoProgress[inlineVideo._id] || 0)}%
+                  <div className="d-flex align-items-center gap-2">
+                    {canMarkVideoComplete(inlineVideo) ? (
+                      <Button 
+                        variant="success" 
+                        size="sm"
+                        onClick={() => {
+                          handleVideoComplete(inlineVideo, inlineVideo.moduleIndex, inlineVideo.videoIndex);
+                          closeInlineVideo();
+                        }}
+                      >
+                        <CheckCircleFill className="me-1" />
+                        Mark Complete
+                      </Button>
+                    ) : (
+                      <div className="text-center">
+                        <div className="text-muted small mb-1">
+                          ⏱️ Watch the complete video to unlock completion
                         </div>
-                        {/* Debug info */}
+                        <div className="text-muted small">
+                          Progress: {Math.round(videoProgress[inlineVideo._id] || 0)}% | 
+                          Watched: {Math.round(videoWatchedTime[inlineVideo._id] || 0)}s
+                        </div>
                         <div className="text-muted small mt-1">
-                          <small>Debug: Start={videoStartTime[inlineVideo._id] ? 'Yes' : 'No'}, 
-                          Time={videoStartTime[inlineVideo._id] ? Math.round((Date.now() - videoStartTime[inlineVideo._id]) / 1000) : 0}s</small>
+                          <small>
+                            {inlineVideo.videoUri && (inlineVideo.videoUri.includes('youtube.com') || inlineVideo.videoUri.includes('youtu.be')) 
+                              ? 'Minimum watch time: 90 seconds' 
+                              : 'Complete video required (90% + 45s minimum)'
+                            }
+                          </small>
                         </div>
-                          {/* Fallback button for YouTube videos if progress is 100% */}
-                          {inlineVideo.videoUri && 
-                           (inlineVideo.videoUri.includes('youtube.com') || inlineVideo.videoUri.includes('youtu.be')) &&
-                           (videoProgress[inlineVideo._id] || 0) >= 100 && (
-                            <div className="mt-2">
-                              <Button 
-                                variant="warning" 
-                                size="sm"
-                                onClick={() => {
-                                  console.log('🎯 Using fallback completion for YouTube video');
-                                  handleVideoComplete(inlineVideo, inlineVideo.moduleIndex, inlineVideo.videoIndex);
-                                  closeInlineVideo();
-                                }}
-                              >
-                                <CheckCircleFill className="me-1" />
-                                Mark Complete (Fallback)
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                   </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -976,7 +1396,36 @@ const Training = () => {
         <Container className="py-4 text-center">
           <div className="mb-4">
             <h5 className="text-muted">No Trainings Found</h5>
-            <p className="text-muted">It looks like no trainings have been assigned to you yet.</p>
+            <p className="text-muted">
+              It looks like no trainings have been assigned to you yet.
+            </p>
+            {currentEmployee && (
+              <div className="mt-3 p-3 bg-light rounded">
+                <h6 className="text-muted mb-2">Current Employee Criteria:</h6>
+                <div className="row text-center">
+                  <div className="col-md-3">
+                    <small className="text-muted d-block">Employee ID</small>
+                    <strong>{currentEmployee.employeeId}</strong>
+                  </div>
+                  <div className="col-md-3">
+                    <small className="text-muted d-block">Designation</small>
+                    <strong>{currentEmployee.role}</strong>
+                  </div>
+                  <div className="col-md-3">
+                    <small className="text-muted d-block">Branch</small>
+                    <strong>{currentEmployee.Store}</strong>
+                  </div>
+                  <div className="col-md-3">
+                    <small className="text-muted d-block">Status</small>
+                    <span className="badge bg-warning">No trainings match</span>
+                  </div>
+                </div>
+                <p className="text-muted small mt-2 mb-0">
+                  Trainings are filtered based on your employee ID, designation, and branch.
+                  Contact your administrator if you believe trainings should be assigned to you.
+                </p>
+              </div>
+            )}
           </div>
           <Button variant="primary" onClick={fetchUserTrainings} disabled={loading}>
             {loading ? 'Refreshing...' : 'Refresh Trainings'}
@@ -992,7 +1441,38 @@ const Training = () => {
       <div className="bg-white shadow-sm">
         <Container fluid>
           <div className="py-3">
+            <div className="d-flex justify-content-between align-items-start">
+              <div>
             <h4 className="mb-0 fw-bold">Trainings</h4>
+                {currentEmployee && (
+                  <div className="mt-2">
+                    <small className="text-muted">
+                      👤 <strong>{currentEmployee.name}</strong> | 
+                      🆔 <strong>{currentEmployee.employeeId}</strong> | 
+                      💼 <strong>{currentEmployee.role}</strong> | 
+                      🏢 <strong>{currentEmployee.Store}</strong>
+                    </small>
+                  </div>
+                )}
+              </div>
+              <div className="d-flex gap-2">
+                <Button 
+                  variant="outline-primary" 
+                  size="sm"
+                  onClick={handleRefreshEmployeeData}
+                  disabled={loading}
+                >
+                  🔄 Refresh
+                </Button>
+                <Button 
+                  variant="outline-secondary" 
+                  size="sm"
+                  onClick={handleLogout}
+                >
+                  🔓 Logout
+                </Button>
+              </div>
+            </div>
           </div>
         </Container>
       </div>
@@ -1028,6 +1508,122 @@ const Training = () => {
         {error && (
           <Alert variant="danger" dismissible onClose={() => setError('')} className="mb-4">
             <strong>Error:</strong> {error}
+          </Alert>
+        )}
+
+        {/* Debug Info */}
+        {debugInfo && (
+          <Alert variant="info" className="mb-4">
+            <strong>Debug Info:</strong> {debugInfo}
+          </Alert>
+        )}
+
+        {/* Raw API Response Debug */}
+        {config.ENABLE_DEBUG && (assignedTrainings.length > 0 || mandatoryTrainings.length > 0) && (
+          <Alert variant="warning" className="mb-4">
+            <div className="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 className="mb-2">🔍 Raw API Response Debug</h6>
+                <small className="text-muted">Click to expand and see the actual data structure</small>
+              </div>
+            </div>
+            
+            <div className="mt-3">
+              <details>
+                <summary className="fw-bold">📊 Raw API Response Data (Click to expand)</summary>
+                <div className="mt-2 p-3 bg-light rounded small">
+                  <div><strong>Assigned Trainings Raw Data (First 2):</strong></div>
+                  <pre className="mt-2 mb-3" style={{ fontSize: '11px', maxHeight: '200px', overflow: 'auto' }}>
+                    {JSON.stringify(assignedTrainings.slice(0, 2), null, 2)}
+                  </pre>
+                  <div><strong>Mandatory Trainings Raw Data (First 2):</strong></div>
+                  <pre className="mt-2" style={{ fontSize: '11px', maxHeight: '200px', overflow: 'auto' }}>
+                    {JSON.stringify(mandatoryTrainings.slice(0, 2), null, 2)}
+                  </pre>
+                </div>
+              </details>
+            </div>
+          </Alert>
+        )}
+
+        {/* Employee Filter Info */}
+        {currentEmployee && (
+          <Alert variant="secondary" className="mb-4">
+            <strong>🔍 Training Filter Applied:</strong>
+            <div className="mt-2">
+              <small>
+                <strong>Employee ID:</strong> {currentEmployee.employeeId} | 
+                <strong>Designation:</strong> {currentEmployee.role} | 
+                <strong>Branch:</strong> {currentEmployee.Store}
+              </small>
+            </div>
+            <div className="mt-1">
+              <small className="text-muted">
+                Showing only trainings assigned to you, matching your designation, or matching your branch.
+              </small>
+            </div>
+            {assignedTrainings.length > 0 || mandatoryTrainings.length > 0 ? (
+              <div className="mt-2">
+                <small className="text-success">
+                  ✅ Found {assignedTrainings.length + mandatoryTrainings.length} relevant trainings
+                </small>
+              </div>
+            ) : (
+              <div className="mt-2">
+                <small className="text-warning">
+                  ⚠️ No trainings match your criteria. Contact your administrator.
+                </small>
+              </div>
+            )}
+          </Alert>
+        )}
+
+        {/* Temporary Debug: Show All Trainings When Filtering Fails */}
+        {config.ENABLE_DEBUG && currentEmployee && (assignedTrainings.length === 0 && mandatoryTrainings.length === 0) && (
+          <Alert variant="danger" className="mb-4">
+            <div className="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 className="mb-2">🚨 FILTERING ISSUE DETECTED</h6>
+                <p className="mb-2">No trainings match your filter criteria. This could mean:</p>
+                <ul className="mb-2 small">
+                  <li>The training data structure doesn't match expected field names</li>
+                  <li>The assigned training has different field values than expected</li>
+                  <li>The API response format has changed</li>
+                </ul>
+                <small className="text-muted">Check the console logs above for detailed filtering information</small>
+              </div>
+            </div>
+            
+            <div className="mt-3">
+              <details>
+                <summary className="fw-bold">🔍 Show All Available Trainings (Debug Mode)</summary>
+                <div className="mt-2 p-3 bg-light rounded small">
+                  <div className="mb-2">
+                    <strong>⚠️ WARNING:</strong> This shows ALL trainings from the API (not filtered)
+                  </div>
+                  <div><strong>All Available Trainings:</strong></div>
+                  <pre className="mt-2" style={{ fontSize: '11px', maxHeight: '300px', overflow: 'auto' }}>
+                    {JSON.stringify([...assignedTrainings, ...mandatoryTrainings], null, 2)}
+                  </pre>
+                </div>
+              </details>
+              
+              {/* Temporary Debug Button */}
+              <div className="mt-3">
+                <Button 
+                  variant="warning" 
+                  size="sm" 
+                  onClick={() => {
+                    console.log('🔍 DEBUG: Bypassing filtering to show all trainings');
+                    console.log('🔍 All assigned trainings from API:', assignedTrainings);
+                    console.log('🔍 All mandatory trainings from API:', mandatoryTrainings);
+                    alert('Check console for all available trainings data');
+                  }}
+                >
+                  🔍 Debug: Show All Trainings in Console
+                </Button>
+              </div>
+            </div>
           </Alert>
         )}
 
@@ -1069,21 +1665,21 @@ const Training = () => {
                           </Badge>
                         </div>
                         
-                                                 {/* Progress */}
-                         <div className="mb-3">
-                           <div className="d-flex justify-content-between align-items-center mb-1">
-                             <small className="text-muted">Complete each training module and its assessment to test your understanding. Go to track!</small>
-                             <small className="fw-bold">
-                               {isTrainingCompleted(training) ? '100% Completed' : `${getTrainingProgress(training)}% Completed`}
-                             </small>
-                           </div>
-                           <ProgressBar 
-                             now={isTrainingCompleted(training) ? 100 : getTrainingProgress(training)} 
-                             className="mb-2"
-                             style={{ height: '8px' }}
-                             variant={isTrainingCompleted(training) ? 'success' : getTrainingProgress(training) > 75 ? 'success' : getTrainingProgress(training) > 25 ? 'warning' : 'info'}
-                           />
-                         </div>
+                        {/* Progress */}
+                        <div className="mb-3">
+                          <div className="d-flex justify-content-between align-items-center mb-1">
+                            <small className="text-muted">🚫 Anti-Skip Protection Enabled - Complete each training module without fast forwarding</small>
+                            <small className="fw-bold">
+                              {isTrainingCompleted(training) ? '100% Completed' : `${getTrainingProgress(training)}% Completed`}
+                            </small>
+                          </div>
+                          <ProgressBar 
+                            now={isTrainingCompleted(training) ? 100 : getTrainingProgress(training)} 
+                            className="mb-2"
+                            style={{ height: '8px' }}
+                            variant={isTrainingCompleted(training) ? 'success' : getTrainingProgress(training) > 75 ? 'success' : getTrainingProgress(training) > 25 ? 'warning' : 'info'}
+                          />
+                        </div>
 
                         {/* Module Count and Type */}
                         <div className="d-flex justify-content-between align-items-center mb-3">
@@ -1102,25 +1698,25 @@ const Training = () => {
                           </div>
                         </div>
 
-                                                 {/* Action Button */}
-                         <div className="d-grid">
-                           {isTrainingCompleted(training) ? (
-                             <Button 
-                               variant="outline-success"
-                               onClick={() => handleStartTraining(training)}
-                             >
-                               <CheckCircleFill className="me-1" />
-                               Review Training
-                             </Button>
-                           ) : (
-                             <Button 
-                               variant={training.progress > 0 ? 'outline-success' : 'success'}
-                               onClick={() => handleStartTraining(training)}
-                             >
-                               {training.progress > 0 ? 'Continue Training' : 'Start Training'}
-                             </Button>
-                           )}
-                         </div>
+                        {/* Action Button */}
+                        <div className="d-grid">
+                          {isTrainingCompleted(training) ? (
+                            <Button 
+                              variant="outline-success"
+                              onClick={() => handleStartTraining(training)}
+                            >
+                              <CheckCircleFill className="me-1" />
+                              Review Training
+                            </Button>
+                          ) : (
+                            <Button 
+                              variant={training.progress > 0 ? 'outline-success' : 'success'}
+                              onClick={() => handleStartTraining(training)}
+                            >
+                              {training.progress > 0 ? 'Continue Training' : 'Start Training'}
+                            </Button>
+                          )}
+                        </div>
                       </Card.Body>
                     </Card>
                   </Col>

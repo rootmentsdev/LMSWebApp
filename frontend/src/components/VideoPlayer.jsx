@@ -21,6 +21,7 @@ import {
   Clock,
   Eye
 } from 'react-bootstrap-icons';
+import { config } from '../config';
 
 const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
   const [videoError, setVideoError] = useState(false);
@@ -39,13 +40,26 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
   const progressInterval = useRef(null);
 
   useEffect(() => {
+    console.log('🎬 VideoPlayer received video data:', video);
     if (video && video.videoUri) {
+      console.log('✅ Video has URI:', video.videoUri);
       setVideoError(false);
       setLoading(true);
       const processedUrl = processVideoUrl(video.videoUri);
-      setVideoUrl(processedUrl);
-      setVideoType(detectVideoType(processedUrl));
+      
+      if (processedUrl) {
+        setVideoUrl(processedUrl);
+        const detectedType = detectVideoType(processedUrl);
+        setVideoType(detectedType);
+        console.log('🔍 Processed URL:', processedUrl, 'Type:', detectedType);
+      } else {
+        console.log('❌ Failed to process video URL');
+        setVideoError(true);
+        setLoading(false);
+        setVideoType('unknown');
+      }
     } else {
+      console.log('❌ Video missing URI:', video);
       setVideoUrl('');
       setVideoError(false);
       setVideoType('unknown');
@@ -54,54 +68,91 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
 
   useEffect(() => {
     if (show && videoUrl) {
-      setLoading(false);
+      // Set a timeout for YouTube videos to detect loading issues
+      if (videoType === 'youtube') {
+        const timeoutId = setTimeout(() => {
+          if (loading) {
+            console.log('⏰ YouTube video loading timeout - showing fallback');
+            setVideoError(true);
+            setLoading(false);
+          }
+        }, 8000); // 8 second timeout
+        
+        // Also check if the iframe is actually showing content
+        const contentCheckId = setTimeout(() => {
+          if (loading) {
+            console.log('🔍 Checking if YouTube iframe actually loaded content...');
+            // This will help detect if the iframe loaded but the video content didn't
+            setLoading(false);
+          }
+        }, 5000); // 5 second content check
+        
+        // Additional check for iframe content visibility
+        const visibilityCheckId = setTimeout(() => {
+          try {
+            const iframe = document.querySelector('iframe[src*="youtube.com"]');
+            if (iframe && !loading) {
+              // Check if the iframe is visible and has content
+              const iframeRect = iframe.getBoundingClientRect();
+              const isVisible = iframeRect.width > 0 && iframeRect.height > 0;
+              console.log('🔍 Iframe visibility check:', isVisible, 'Dimensions:', iframeRect.width, 'x', iframeRect.height);
+              
+              if (!isVisible || iframeRect.width < 200 || iframeRect.height < 150) {
+                console.log('⚠️ Iframe appears to be not properly loaded, showing fallback');
+                setVideoError(true);
+              }
+            }
+          } catch (e) {
+            console.log('🔍 Error in visibility check:', e.message);
+          }
+        }, 6000); // 6 second visibility check
+        
+        return () => {
+          clearTimeout(timeoutId);
+          clearTimeout(contentCheckId);
+          clearTimeout(visibilityCheckId);
+        };
+      } else {
+        setLoading(false);
+      }
     }
-  }, [show, videoUrl]);
+  }, [show, videoUrl, videoType, loading]);
 
-  // Process video URL to handle different formats
+  // Process video URL to handle different formats - Using the working logic from Training.jsx
   const processVideoUrl = (url) => {
-    if (!url) return '';
+    if (!url) return null;
     
     console.log('🔍 Processing video URL:', url);
     
-    let videoId = '';
-    
-    // Handle different YouTube URL formats
-    if (url.includes('youtu.be/')) {
-      videoId = url.split('youtu.be/')[1];
-      console.log('🔍 Extracted from youtu.be:', videoId);
-    } else if (url.includes('youtube.com/watch?v=')) {
-      videoId = url.split('youtube.com/watch?v=')[1];
-      console.log('🔍 Extracted from youtube.com/watch:', videoId);
-    } else if (url.includes('youtube.com/embed/')) {
-      videoId = url.split('youtube.com/embed/')[1];
-      console.log('🔍 Extracted from youtube.com/embed:', videoId);
-    } else if (url.includes('youtube.com/v/')) {
-      videoId = url.split('youtube.com/v/')[1];
-      console.log('🔍 Extracted from youtube.com/v:', videoId);
-    }
-    
-    // Remove any additional parameters (including ?si=...)
-    if (videoId.includes('&')) {
-      videoId = videoId.split('&')[0];
-      console.log('🔍 Removed & parameters:', videoId);
-    }
-    if (videoId.includes('?')) {
-      videoId = videoId.split('?')[0];
-      console.log('🔍 Removed ? parameters:', videoId);
-    }
-    
-    console.log('🔍 Final video ID:', videoId);
-    
-    // Check if it looks like a valid YouTube video ID (11 characters)
-    if (videoId && videoId.length === 11) {
-      const embedUrl = `https://www.youtube.com/embed/${videoId}`;
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      let videoId = '';
+      if (url.includes('youtube.com/watch?v=')) {
+        videoId = url.split('v=')[1];
+      } else if (url.includes('youtu.be/')) {
+        videoId = url.split('youtu.be/')[1];
+      }
+      
+      // Fix: videoId is an array, we need the first element
+      if (Array.isArray(videoId)) {
+        videoId = videoId[0];
+      }
+      
+      if (videoId.includes('&')) {
+        videoId = videoId.split('&')[0];
+      }
+      if (videoId.includes('?')) {
+        videoId = videoId.split('?')[0];
+      }
+      
+      const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&controls=1&disablekb=1&fs=0`;
       console.log('🔍 Generated embed URL:', embedUrl);
       return embedUrl;
     }
     
-    console.log('⚠️ Invalid YouTube ID, returning original URL');
-    // If not a valid YouTube ID, return the original URL
+    if (url.match(/\.(mp4|webm|ogg|mov|avi)$/i)) {
+      return url;
+    }
+    
     return url;
   };
 
@@ -304,22 +355,134 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
       );
     }
 
-         // YouTube videos
+              // YouTube videos
      if (videoType === 'youtube') {
        console.log('🎬 Rendering YouTube iframe with URL:', videoUrl);
+       
+       if (videoError) {
+         return (
+           <div className="text-center p-4">
+             <Alert variant="warning">
+               <h6>⚠️ YouTube Video Failed to Load</h6>
+               <p className="mb-3">The embedded video couldn't be loaded. This could be due to:</p>
+               <ul className="text-start small mb-3">
+                 <li>Browser security restrictions</li>
+                 <li>Network connectivity issues</li>
+                 <li>Video embedding being disabled</li>
+               </ul>
+               <div className="d-flex gap-2 justify-content-center">
+                 <Button 
+                   variant="primary" 
+                   onClick={() => window.open(video.videoUri, '_blank')}
+                   className="me-2"
+                 >
+                   🎬 Watch on YouTube
+                 </Button>
+                 <Button 
+                   variant="outline-secondary" 
+                   onClick={() => {
+                     setVideoError(false);
+                     setLoading(true);
+                   }}
+                 >
+                   🔄 Retry
+                 </Button>
+               </div>
+             </Alert>
+           </div>
+         );
+       }
+       
        return (
          <div className="ratio ratio-16x9">
-           <iframe
-             src={`${videoUrl}?autoplay=0&rel=0&modestbranding=1`}
-             title={video.title || 'Video'}
-             frameBorder="0"
-             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-             allowFullScreen
-             className="rounded"
-             onError={handleVideoError}
-             onLoad={handleVideoLoad}
-             style={{ border: 'none' }}
-           ></iframe>
+                       {/* Loading state */}
+            {loading && (
+              <div className="d-flex align-items-center justify-content-center bg-dark text-white rounded">
+                <div className="text-center">
+                  <div className="spinner-border text-light mb-2" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <div>Loading YouTube video...</div>
+                  <small className="text-muted">This may take a few seconds</small>
+                </div>
+              </div>
+            )}
+            
+            {/* YouTube iframe */}
+            <iframe
+              src={videoUrl}
+              title={video.title || 'Video'}
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              className="rounded"
+              style={{ border: 'none', display: loading ? 'none' : 'block' }}
+              onLoad={() => {
+                console.log('✅ YouTube iframe loaded successfully');
+                setLoading(false);
+                setVideoError(false);
+                
+                // Additional check to see if the video actually loaded
+                setTimeout(() => {
+                  try {
+                    const iframe = document.querySelector('iframe[src*="youtube.com"]');
+                    if (iframe) {
+                      // Check if the iframe has any content
+                      const iframeRect = iframe.getBoundingClientRect();
+                      console.log('🔍 Iframe dimensions:', iframeRect.width, 'x', iframeRect.height);
+                      
+                      // If the iframe is very small or has no content, it might not have loaded properly
+                      if (iframeRect.width < 100 || iframeRect.height < 100) {
+                        console.log('⚠️ Iframe appears to be too small, might not have loaded properly');
+                        setVideoError(true);
+                      }
+                    }
+                  } catch (e) {
+                    console.log('🔍 Error checking iframe content:', e.message);
+                  }
+                }, 3000);
+              }}
+              onError={() => {
+                console.error('❌ YouTube iframe failed to load');
+                setVideoError(true);
+                setLoading(false);
+              }}
+              ref={(iframe) => {
+                if (iframe) {
+                  console.log('🔍 Iframe element created:', iframe);
+                  // Add a message listener to detect if YouTube is actually working
+                  const handleMessage = (event) => {
+                    if (event.origin === 'https://www.youtube.com') {
+                      console.log('📡 YouTube message received:', event.data);
+                    }
+                  };
+                  window.addEventListener('message', handleMessage);
+                  
+                  // Check if iframe content is actually loaded
+                  setTimeout(() => {
+                    try {
+                      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                      console.log('🔍 Iframe document accessible:', !!iframeDoc);
+                    } catch (e) {
+                      console.log('🔍 Iframe document not accessible (expected for cross-origin):', e.message);
+                    }
+                  }, 2000);
+                }
+              }}
+            ></iframe>
+            
+            {/* Fallback message if iframe appears empty */}
+            {!loading && !videoError && (
+              <div className="mt-2 text-center">
+                <Alert variant="info" className="mb-2">
+                  <small>
+                    <strong>💡 Tip:</strong> If you only see a YouTube logo and play button, 
+                    the video might not be loading properly. Try the "Watch on YouTube" button below.
+                  </small>
+                </Alert>
+              </div>
+            )}
+           
            <div className="mt-2 text-center">
              <small className="text-muted">
                If the video doesn't load, try{' '}
@@ -332,6 +495,93 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
                  opening in YouTube
                </Button>
              </small>
+           </div>
+           
+           {/* Prominent fallback button */}
+           <div className="mt-3 text-center">
+             <Button 
+               variant="primary" 
+               size="lg"
+               onClick={() => {
+                 console.log('🎬 Opening video directly in YouTube:', video.videoUri);
+                 window.open(video.videoUri, '_blank');
+               }}
+               className="me-2"
+             >
+               🎬 Watch on YouTube
+             </Button>
+             <Button 
+               variant="outline-secondary" 
+               size="lg"
+               onClick={() => {
+                 console.log('📋 Copying video URL to clipboard');
+                 navigator.clipboard.writeText(video.videoUri);
+                 alert('Video URL copied to clipboard!');
+               }}
+               className="me-2"
+             >
+               📋 Copy URL
+             </Button>
+             <Button 
+               variant="warning" 
+               size="lg"
+               onClick={() => {
+                 console.log('🔄 Trying alternative video loading method');
+                 // Try to reload the iframe with different parameters
+                 setLoading(true);
+                 setVideoError(false);
+                 // Force a re-render by updating the URL slightly
+                 const newUrl = `${videoUrl}&t=${Date.now()}`;
+                 setVideoUrl(newUrl);
+               }}
+             >
+               🔄 Reload Video
+             </Button>
+           </div>
+           
+           {/* Debug info for YouTube videos */}
+           {config?.ENABLE_DEBUG && (
+             <div className="mt-2 p-2 bg-light rounded small">
+               <strong>Debug Info:</strong>
+               <div>Original URL: {video.videoUri}</div>
+               <div>Processed URL: {videoUrl}</div>
+               <div>Video Type: {videoType}</div>
+               <div>Loading State: {loading ? 'Yes' : 'No'}</div>
+               <div>Error State: {videoError ? 'Yes' : 'No'}</div>
+               <div>Video Object: {JSON.stringify(video, null, 2)}</div>
+             </div>
+           )}
+           
+           {/* Quick test link */}
+           <div className="mt-2 text-center">
+             <Button 
+               variant="outline-info" 
+               size="sm"
+               onClick={() => {
+                 console.log('🔍 Testing video URL:', video.videoUri);
+                 console.log('🔍 Processed URL:', videoUrl);
+                 window.open(video.videoUri, '_blank');
+               }}
+               className="me-2"
+             >
+               🔍 Test Video URL
+             </Button>
+             
+             <Button 
+               variant="outline-warning" 
+               size="sm"
+               onClick={() => {
+                 console.log('🔍 Testing processed embed URL:', videoUrl);
+                 // Try to open the processed embed URL directly
+                 if (videoUrl && videoUrl.includes('youtube.com/embed/')) {
+                   window.open(videoUrl, '_blank');
+                 } else {
+                   alert('No valid embed URL available');
+                 }
+               }}
+             >
+               🔍 Test Embed URL
+             </Button>
            </div>
          </div>
        );
