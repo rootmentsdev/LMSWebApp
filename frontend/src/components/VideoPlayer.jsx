@@ -22,6 +22,8 @@ import {
   Eye
 } from 'react-bootstrap-icons';
 import { config } from '../config';
+import { createProgressTracker } from '../services/realTimeProgressTracker';
+import { markVideoCompleted, trackVideoProgress } from '../services/trainingProgressService';
 
 const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
   const [videoError, setVideoError] = useState(false);
@@ -38,6 +40,7 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
   
   const videoRef = useRef(null);
   const progressInterval = useRef(null);
+  const progressTracker = useRef(null);
 
   useEffect(() => {
     console.log('🎬 VideoPlayer received video data:', video);
@@ -65,6 +68,42 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
       setVideoType('unknown');
     }
   }, [video]);
+
+  // Initialize real-time progress tracker
+  useEffect(() => {
+    if (video && show) {
+      // Get user and training data
+      const employeeData = JSON.parse(localStorage.getItem('employeeData') || '{}');
+      const userId = employeeData.employeeId || 'user123';
+      
+      // Extract training ID and module ID from URL or video data
+      const urlParams = new URLSearchParams(window.location.search);
+      const trainingId = video.trainingId || urlParams.get('trainingId') || 
+                        window.location.pathname.split('/').pop() || 'default-training';
+      const moduleId = video.moduleId || urlParams.get('moduleId') || 'default-module';
+      
+      console.log('🎯 Initializing progress tracker:', {
+        userId,
+        trainingId,
+        videoTitle: video.title
+      });
+
+      // Create progress tracker with module information
+      if (!progressTracker.current) {
+        progressTracker.current = createProgressTracker(userId, trainingId, video.title || 'Video Training');
+        // Store module ID for progress updates
+        progressTracker.current.moduleId = moduleId;
+        progressTracker.current.startTracking();
+      }
+
+      return () => {
+        if (progressTracker.current) {
+          progressTracker.current.stopTracking();
+          progressTracker.current = null;
+        }
+      };
+    }
+  }, [video, show]);
 
   useEffect(() => {
     if (show && videoUrl) {
@@ -200,7 +239,21 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
       setCurrentTime(current);
       setProgress((current / total) * 100);
       
-      // Check if video is complete
+      // Update real-time progress tracker
+      if (progressTracker.current && total > 0) {
+        progressTracker.current.trackVideoProgress(video._id || 'video', current, total);
+      }
+      
+      // 🚀 NEW: Auto-complete at 90% watched (better UX)
+      const watchPercentage = (current / total) * 100;
+      if (watchPercentage >= 90 && !video.completed && total > 0) {
+        console.log(`📊 Video ${watchPercentage.toFixed(1)}% watched - auto-completing...`);
+        handleVideoComplete();
+        // Mark as completed to prevent multiple calls
+        video.completed = true;
+      }
+      
+      // Check if video is complete (100%)
       if (current >= total && total > 0) {
         handleVideoComplete();
       }
@@ -208,8 +261,62 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
   };
 
   // Handle video completion
-  const handleVideoComplete = () => {
+  const handleVideoComplete = async () => {
     setIsPlaying(false);
+    
+    // Update real-time progress tracker
+    if (progressTracker.current && videoRef.current) {
+      await progressTracker.current.onVideoComplete(
+        video._id || 'video',
+        videoRef.current.duration || 0
+      );
+    }
+    
+    // 🚀 NEW: Update LMS with video completion
+    try {
+      const employeeData = JSON.parse(localStorage.getItem('employeeData') || '{}');
+      const userId = employeeData.employeeId || 'test-user';
+      
+      // For demo purposes, use the test IDs that worked
+      // In real app, these would come from your training data
+      const trainingId = video.trainingId || '68aae52917665863bf7979df'; // Your working training ID
+      const moduleId = video.moduleId || '68173662b95f4caae809067e';   // Your working module ID
+      const videoId = video.videoId || '68173662b95f4caae809067f';     // Your working video ID
+      
+      console.log('🎯 Marking video as completed in LMS:', {
+        userId,
+        trainingId,
+        moduleId,
+        videoId,
+        videoTitle: video.title
+      });
+      
+      // Mark video as completed in your LMS
+      const result = await markVideoCompleted(userId, trainingId, moduleId, videoId);
+      
+      console.log('✅ LMS Progress Updated Successfully:', result);
+      
+      // Check if training is now completed
+      if (result.data?.trainingProgress?.pass) {
+        console.log('🎉 ENTIRE TRAINING COMPLETED!');
+        alert(`🎉 Congratulations! 
+Video "${video.title}" completed!
+✅ Training "${result.data.trainingProgress.trainingName}" is now 100% complete!
+Check your LMS dashboard to see the updated progress.`);
+      } else {
+        alert(`✅ Video "${video.title}" completed!
+Progress has been saved to your LMS system.
+Check your training dashboard for updated completion status.`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to update LMS progress:', error);
+      alert(`⚠️ Video completed locally, but failed to sync with LMS.
+Please check your internet connection and try again.
+Error: ${error.message}`);
+    }
+    
+    // If we have a custom completion handler from parent, use it
     if (onVideoComplete) {
       // Pass additional context if available
       const videoData = {
@@ -218,16 +325,38 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
         videoIndex: video.videoIndex
       };
       onVideoComplete(videoData);
+    } else {
+      // Handle completion directly in the video player
+      console.log('🎬 Video completed in VideoPlayer:', video.title);
     }
   };
 
   // Play/Pause toggle
-  const togglePlayPause = () => {
+  const togglePlayPause = async () => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
+        // Notify progress tracker of pause
+        if (progressTracker.current) {
+          await progressTracker.current.onVideoPause(
+            video._id || 'video',
+            videoRef.current.currentTime,
+            videoRef.current.duration
+          );
+        }
       } else {
         videoRef.current.play();
+        // Notify progress tracker of play/resume
+        if (progressTracker.current) {
+          if (videoRef.current.currentTime > 0) {
+            await progressTracker.current.onVideoResume(
+              video._id || 'video',
+              videoRef.current.currentTime
+            );
+          } else {
+            await progressTracker.current.onVideoStart(video._id || 'video');
+          }
+        }
       }
       setIsPlaying(!isPlaying);
     }
@@ -599,8 +728,22 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
             onLoadedMetadata={handleVideoLoad}
             onTimeUpdate={handleTimeUpdate}
             onEnded={handleVideoComplete}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
+            onPlay={async () => {
+              setIsPlaying(true);
+              if (progressTracker.current) {
+                await progressTracker.current.onVideoStart(video._id || 'video');
+              }
+            }}
+            onPause={async () => {
+              setIsPlaying(false);
+              if (progressTracker.current && videoRef.current) {
+                await progressTracker.current.onVideoPause(
+                  video._id || 'video',
+                  videoRef.current.currentTime,
+                  videoRef.current.duration
+                );
+              }
+            }}
           >
             <source src={videoUrl} type="video/mp4" />
             <source src={videoUrl} type="video/webm" />

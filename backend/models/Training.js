@@ -45,7 +45,48 @@ const trainingSchema = new mongoose.Schema({
       enum: ['pending', 'in_progress', 'completed'],
       default: 'pending'
     },
-    completedDate: Date
+    completedDate: Date,
+    // New: Module progress tracking
+    moduleProgress: [{
+      moduleId: String,
+      moduleName: String,
+      progress: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100
+      },
+      status: {
+        type: String,
+        enum: ['pending', 'in_progress', 'completed'],
+        default: 'pending'
+      },
+      videos: [{
+        videoId: String,
+        videoTitle: String,
+        progress: {
+          type: Number,
+          default: 0,
+          min: 0,
+          max: 100
+        },
+        status: {
+          type: String,
+          enum: ['pending', 'in_progress', 'completed'],
+          default: 'pending'
+        },
+        watchTime: Number, // in seconds
+        totalDuration: Number, // in seconds
+        lastUpdated: {
+          type: Date,
+          default: Date.now
+        }
+      }],
+      lastUpdated: {
+        type: Date,
+        default: Date.now
+      }
+    }]
   }],
   targetCriteria: {
     branches: [String],

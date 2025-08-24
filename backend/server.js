@@ -7,6 +7,7 @@ require('dotenv').config();
 // Import database connection and routes
 const connectDB = require('./config/database');
 const trainingRoutes = require('./routes/trainingRoutes');
+const trainingProgressBridgeRoutes = require('./routes/trainingProgressBridgeRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -113,6 +114,9 @@ app.get('/api/health', (req, res) => {
 // Training routes - This includes all the missing GET endpoints
 app.use('/api/trainings', trainingRoutes);
 
+// Training Progress Bridge routes - Connect training app with LMS system
+app.use('/api/bridge', trainingProgressBridgeRoutes);
+
 // Additional training endpoints for backward compatibility
 app.get('/api/mandatorytrainings', async (req, res) => {
   // Redirect to the new endpoint
@@ -135,19 +139,23 @@ app.use((req, res) => {
     status: 'error',
     message: 'Endpoint not found',
     timestamp: new Date().toISOString(),
-    availableEndpoints: [
-      'GET /',
-      'GET /api/health',
-      'POST /api/verify-employee',
-      'GET /api/trainings/all',
-      'GET /api/trainings/mandatorytrainings/all',
-      'GET /api/trainings/user/:userId/assigned-trainings',
-      'GET /api/trainings/user/:userId/mandatory-trainings',
-      'POST /api/trainings',
-      'POST /api/trainings/mandatorytrainings',
-      'PUT /api/trainings/user/:userId/training/:trainingId/progress',
-      'PUT /api/trainings/user/:userId/training/:trainingId/complete'
-    ]
+          availableEndpoints: [
+        'GET /',
+        'GET /api/health',
+        'POST /api/verify-employee',
+        'GET /api/trainings/all',
+        'GET /api/trainings/mandatorytrainings/all',
+        'GET /api/trainings/user/:userId/assigned-trainings',
+        'GET /api/trainings/user/:userId/mandatory-trainings',
+        'POST /api/trainings',
+        'POST /api/trainings/mandatorytrainings',
+        'PUT /api/trainings/user/:userId/training/:trainingId/progress',
+        'PUT /api/trainings/user/:userId/training/:trainingId/complete',
+        'POST /api/bridge/update-progress',
+        'GET /api/bridge/progress/:userId/:trainingId',
+        'POST /api/bridge/sync-all-progress',
+        'POST /api/bridge/video-completion'
+      ]
   });
 });
 
@@ -163,6 +171,8 @@ app.listen(PORT, () => {
   console.log(`   GET /api/trainings/user/:userId/mandatory-trainings`);
   console.log(`   POST /api/trainings`);
   console.log(`   POST /api/trainings/mandatorytrainings`);
+  console.log(`   POST /api/bridge/update-progress`);
+  console.log(`   POST /api/bridge/video-completion`);
 });
 
 module.exports = app;

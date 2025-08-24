@@ -28,13 +28,25 @@ export const config = {
     GET_ALL_MODULES: '/api/modules',
     GET_MODULE_BY_ID: '/api/modules/:id',
     
-    // Progress and Completion (if available)
-    UPDATE_TRAINING_PROGRESS: '/api/trainings/:trainingId/progress',
-    COMPLETE_TRAINING: '/api/trainings/:trainingId/complete',
+    // Real LMS API endpoints from your system
+    GET_ALL_USER_TRAINING: '/api/get/allusertraining',
+    GET_MANDATORY_TRAINING: '/api/get/mandatory/allusertraining',
+    GET_FULL_TRAINING: '/api/get/Full/allusertraining',
+    UPDATE_TRAINING_PROCESS: '/api/user/update/trainingprocess',
+    GET_PROGRESS: '/api/get/progress',
+    GET_USER_TRAINING_PROCESS: '/api/user/trainingprocess',
+    GET_USER_TRAINING_PROCESS_MODULE: '/api/user/trainingprocessmodule',
+    
+    // Legacy endpoints for backward compatibility
+    UPDATE_TRAINING_PROGRESS: '/api/user/training/:trainingId/progress',
+    UPDATE_USER_TRAINING_PROGRESS: '/api/user/:userId/training/:trainingId/progress',
   },
   
   // Test Configuration
   TEST_USER_ID: 'user123', // Default test user ID
+  
+  // Test Video URL for debugging
+  TEST_VIDEO_URL: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
   
   // Debug Configuration
   ENABLE_DEBUG: true, // Set to false in production
