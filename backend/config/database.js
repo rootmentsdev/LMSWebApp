@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
   try {
-    // Check if MONGODB_URI is provided in environment variables
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lms_database';
+    // Force local MongoDB connection for LMS testing
+    const mongoURI = 'mongodb://localhost:27017/lms_database';
     
     const conn = await mongoose.connect(mongoURI, {
       useNewUrlParser: true,

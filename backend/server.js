@@ -7,6 +7,7 @@ require('dotenv').config();
 // Import database connection and routes
 const connectDB = require('./config/database');
 const trainingRoutes = require('./routes/trainingRoutes');
+const lmsRoutes = require('./routes/lmsRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -33,7 +34,10 @@ app.get('/', (req, res) => {
       trainings: '/api/trainings',
       mandatoryTrainings: '/api/mandatorytrainings',
       userTrainings: '/api/trainings/user/:userId/assigned-trainings',
-      userMandatoryTrainings: '/api/trainings/user/:userId/mandatory-trainings'
+      userMandatoryTrainings: '/api/trainings/user/:userId/mandatory-trainings',
+      lmsUserTrainings: '/api/lms/user/:userId/assigned-trainings',
+      lmsTrainingDetails: '/api/lms/user/:userId/training/:trainingId/details',
+      lmsVideoProgress: '/api/lms/user/:userId/training/:trainingId/module/:moduleId/video/:videoIndex/progress'
     }
   });
 });
@@ -113,6 +117,9 @@ app.get('/api/health', (req, res) => {
 // Training routes - This includes all the missing GET endpoints
 app.use('/api/trainings', trainingRoutes);
 
+// LMS routes - Designed for your actual data structure
+app.use('/api/lms', lmsRoutes);
+
 // Additional training endpoints for backward compatibility
 app.get('/api/mandatorytrainings', async (req, res) => {
   // Redirect to the new endpoint
@@ -146,7 +153,9 @@ app.use((req, res) => {
       'POST /api/trainings',
       'POST /api/trainings/mandatorytrainings',
       'PUT /api/trainings/user/:userId/training/:trainingId/progress',
-      'PUT /api/trainings/user/:userId/training/:trainingId/complete'
+      'PUT /api/trainings/user/:userId/training/:trainingId/complete',
+      'PUT /api/trainings/user/:userId/training/:trainingId/module/:moduleId/video/:videoId/progress',
+      'GET /api/trainings/user/:userId/training/:trainingId/details'
     ]
   });
 });
@@ -163,6 +172,8 @@ app.listen(PORT, () => {
   console.log(`   GET /api/trainings/user/:userId/mandatory-trainings`);
   console.log(`   POST /api/trainings`);
   console.log(`   POST /api/trainings/mandatorytrainings`);
+  console.log(`   PUT /api/trainings/user/:userId/training/:trainingId/module/:moduleId/video/:videoId/progress`);
+  console.log(`   GET /api/trainings/user/:userId/training/:trainingId/details`);
 });
 
 module.exports = app;

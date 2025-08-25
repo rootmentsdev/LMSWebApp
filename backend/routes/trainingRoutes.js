@@ -16,4 +16,8 @@ router.post('/mandatorytrainings', trainingController.createMandatoryTraining);
 router.put('/user/:userId/training/:trainingId/progress', trainingController.updateTrainingProgress);
 router.put('/user/:userId/training/:trainingId/complete', trainingController.completeTraining);
 
+// Video progress tracking endpoints (for consumption site)
+router.put('/user/:userId/training/:trainingId/module/:moduleId/video/:videoId/progress', trainingController.updateVideoProgress);
+router.get('/user/:userId/training/:trainingId/details', trainingController.getUserTrainingDetails);
+
 module.exports = router;

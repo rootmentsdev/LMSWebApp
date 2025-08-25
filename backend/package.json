@@ -4,7 +4,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "NODE_ENV=development nodemon server.js",
+    "dev-win": "set NODE_ENV=development && nodemon server.js",
+    "test-integration": "NODE_ENV=test node test-integration.js",
+    "test-integration-win": "set NODE_ENV=test && node test-integration.js",
     "seed": "node seed-data.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

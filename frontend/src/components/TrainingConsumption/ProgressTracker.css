@@ -1,0 +1,252 @@
+.progress-tracker {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+  border: 1px solid #e0e0e0;
+}
+
+.progress-tracker.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  gap: 12px;
+}
+
+.progress-tracker.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  gap: 12px;
+  flex-direction: column;
+}
+
+.progress-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.progress-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.status {
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.status.not-started {
+  background-color: #f8f9fa;
+  color: #6c757d;
+}
+
+.status.in-progress {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.status.completed {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.status.pending {
+  background-color: #f8f9fa;
+  color: #6c757d;
+}
+
+.progress-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress-item label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #555;
+}
+
+.progress-bar {
+  height: 8px;
+  background-color: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #007bff, #0056b3);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-fill.module {
+  background: linear-gradient(90deg, #28a745, #1e7e34);
+}
+
+.progress-fill.video {
+  background: linear-gradient(90deg, #ffc107, #e0a800);
+}
+
+.progress-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  align-self: flex-end;
+}
+
+.last-watched {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e9ecef;
+  text-align: center;
+}
+
+.last-watched small {
+  color: #666;
+  font-size: 12px;
+}
+
+.external-website-notice {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background-color: #e7f3ff;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.external-website-notice small {
+  color: #0066cc;
+  font-weight: 500;
+}
+
+.error-message {
+  color: #dc3545;
+  font-weight: 500;
+}
+
+.retry-button {
+  padding: 6px 12px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.retry-button:hover {
+  background-color: #0056b3;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .progress-tracker {
+    padding: 16px;
+  }
+
+  .progress-header {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .progress-header h3 {
+    font-size: 16px;
+  }
+
+  .progress-bars {
+    gap: 12px;
+  }
+
+  .progress-item {
+    gap: 4px;
+  }
+
+  .progress-item label {
+    font-size: 13px;
+  }
+
+  .progress-text {
+    font-size: 11px;
+  }
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  .progress-tracker {
+    background: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+  }
+
+  .progress-header h3 {
+    color: #e2e8f0;
+  }
+
+  .progress-item label {
+    color: #cbd5e0;
+  }
+
+  .progress-bar {
+    background-color: #4a5568;
+  }
+
+  .progress-text {
+    color: #e2e8f0;
+  }
+
+  .last-watched small {
+    color: #a0aec0;
+  }
+
+  .status.not-started,
+  .status.pending {
+    background-color: #4a5568;
+    color: #a0aec0;
+  }
+
+  .status.in-progress {
+    background-color: #744210;
+    color: #fbbf24;
+  }
+
+  .status.completed {
+    background-color: #22543d;
+    color: #48bb78;
+  }
+}

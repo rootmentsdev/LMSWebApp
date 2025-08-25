@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>External Video Website - LMS Integration Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .video-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .progress-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        video {
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .video-item {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .video-title {
+            margin: 10px 0;
+            font-weight: bold;
+        }
+
+        .status {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status.synced {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status.pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .integration-info {
+            background: #e7f3ff;
+            border: 1px solid #b3d7ff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .code-example {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .log-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 12px;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>External Video Website</h1>
+        <p>This is an example of how external websites can integrate with your LMS to track video progress.</p>
+        <div class="status synced">
+            ✅ LMS Integration Active - Progress will be automatically synced
+        </div>
+    </div>
+
+    <div class="progress-container" id="progressContainer">
+        <!-- Progress tracker will be loaded here -->
+    </div>
+
+    <div class="video-container">
+        <h2>Training Videos</h2>
+        <div class="video-grid">
+            <div class="video-item">
+                <video
+                    data-video-id="video_001"
+                    data-lms-video-id="video_001"
+                    controls
+                    poster="https://via.placeholder.com/400x225/007bff/ffffff?text=Video+1">
+                    <source src="https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <div class="video-title">Introduction to Safety Training</div>
+                <div class="status pending" id="status_video_001">Progress: Not started</div>
+            </div>
+
+            <div class="video-item">
+                <video
+                    data-video-id="video_002"
+                    data-lms-video-id="video_002"
+                    controls
+                    poster="https://via.placeholder.com/400x225/28a745/ffffff?text=Video+2">
+                    <source src="https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <div class="video-title">Advanced Safety Procedures</div>
+                <div class="status pending" id="status_video_002">Progress: Not started</div>
+            </div>
+
+            <div class="video-item">
+                <video
+                    data-video-id="video_003"
+                    data-lms-video-id="video_003"
+                    controls
+                    poster="https://via.placeholder.com/400x225/ffc107/ffffff?text=Video+3">
+                    <source src="https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_5mb.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <div class="video-title">Emergency Response Training</div>
+                <div class="status pending" id="status_video_003">Progress: Not started</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="integration-info">
+        <h3>🔧 Integration Information</h3>
+        <p>This page demonstrates automatic progress tracking. The videos are automatically tracked when played.</p>
+
+        <h4>Manual Integration Code:</h4>
+        <div class="code-example">
+&lt;!-- Include the integration script --&gt;
+&lt;script src="http://localhost:3000/lms-progress-integration.js"&gt;&lt;/script&gt;
+
+&lt;!-- Initialize the tracker (or use data attributes) --&gt;
+&lt;script&gt;
+const tracker = window.initializeLMSProgressTracker({
+    userId: '68aab7310e17c845daa50352',
+    trainingId: '68ab07279782e8652d5b0e1c',
+    moduleId: '68173662b95f4caae809067e',
+    apiUrl: 'http://localhost:7000/api'
+});
+
+// Manual progress tracking
+tracker.trackProgress('started', 0, 300, 'video_001');
+&lt;/script&gt;
+        </div>
+
+        <h4>API Endpoints Used:</h4>
+        <ul>
+            <li><code>POST /api/training/update-video-progress</code> - Update video progress</li>
+            <li><code>GET /api/training/user-progress/{userId}</code> - Get user progress</li>
+            <li><code>POST /api/training/sync-external-progress</code> - Sync external data</li>
+        </ul>
+
+        <button onclick="testAPI()">Test API Connection</button>
+        <button onclick="getCurrentProgress()">Get Current Progress</button>
+        <button onclick="clearLogs()">Clear Logs</button>
+    </div>
+
+    <div class="log-container">
+        <h3>Activity Log</h3>
+        <div id="activityLog">
+            <div class="log-entry">🔄 Initializing LMS Progress Tracker...</div>
+        </div>
+    </div>
+
+    <!-- Include the integration script -->
+    <script src="http://localhost:3000/lms-progress-integration.js"></script>
+
+    <!-- Progress Tracker Component (you can also embed this) -->
+    <script src="http://localhost:3000/progress-tracker.js"></script>
+
+    <script>
+        // Initialize the LMS Progress Tracker
+        const tracker = window.initializeLMSProgressTracker({
+            userId: '68aab7310e17c845daa50352', // Example user ID
+            trainingId: '68ab07279782e8652d5b0e1c', // Example training ID
+            moduleId: '68173662b95f4caae809067e', // Example module ID
+            apiUrl: 'http://localhost:7000/api',
+            updateInterval: 3000 // Update every 3 seconds for demo
+        });
+
+        // Set up event listeners for logging
+        tracker.on('progressUpdated', (data) => {
+            logActivity(`📊 Progress Updated: ${JSON.stringify(data)}`);
+            updateVideoStatus(data);
+        });
+
+        tracker.on('progressError', (error) => {
+            logActivity(`❌ Error: ${error}`, 'error');
+        });
+
+        tracker.on('progressFetched', (data) => {
+            logActivity(`📥 Progress Fetched: ${JSON.stringify(data)}`);
+        });
+
+        // Load progress tracker component
+        const progressContainer = document.getElementById('progressContainer');
+        progressContainer.innerHTML = `
+            <div style="padding: 20px; text-align: center; color: #666;">
+                Progress Tracker Component Loading...
+                <br><small>You can embed the React component here</small>
+            </div>
+        `;
+
+        // Log activity
+        function logActivity(message, type = 'info') {
+            const logContainer = document.getElementById('activityLog');
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `<span style="color: ${type === 'error' ? 'red' : 'green'}">•</span> ${new Date().toLocaleTimeString()} - ${message}`;
+            logContainer.appendChild(logEntry);
+
+            // Keep only last 20 entries
+            while (logContainer.children.length > 20) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+
+            // Auto-scroll to bottom
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Update video status based on progress data
+        function updateVideoStatus(data) {
+            if (data.videoProgress) {
+                const videoId = data.videoProgress.videoId;
+                const statusElement = document.getElementById(`status_${videoId}`);
+                if (statusElement) {
+                    const progress = data.videoProgress.progress;
+                    statusElement.textContent = `Progress: ${progress.toFixed(1)}%`;
+                    statusElement.className = `status ${progress > 90 ? 'synced' : 'pending'}`;
+                }
+            }
+        }
+
+        // Test API connection
+        async function testAPI() {
+            logActivity('Testing API connection...');
+            try {
+                const response = await fetch('http://localhost:7000/api/training/user-progress/68aab7310e17c845daa50352');
+                const data = await response.json();
+                logActivity(`API Test Result: ${response.status} - ${JSON.stringify(data)}`);
+            } catch (error) {
+                logActivity(`API Test Failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Get current progress
+        async function getCurrentProgress() {
+            logActivity('Fetching current progress...');
+            try {
+                const progress = await tracker.getProgress();
+                logActivity(`Current Progress: ${JSON.stringify(progress)}`);
+            } catch (error) {
+                logActivity(`Failed to get progress: ${error.message}`, 'error');
+            }
+        }
+
+        // Clear logs
+        function clearLogs() {
+            document.getElementById('activityLog').innerHTML = '';
+            logActivity('Logs cleared');
+        }
+
+        // Initial log
+        logActivity('🚀 LMS Progress Tracker initialized successfully');
+        logActivity('🎥 Ready to track video progress');
+
+        // Test connection on page load
+        setTimeout(testAPI, 1000);
+    </script>
+</body>
+</html>
