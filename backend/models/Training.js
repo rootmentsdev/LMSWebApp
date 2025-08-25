@@ -16,9 +16,18 @@ const trainingSchema = new mongoose.Schema({
     default: 'regular'
   },
   modules: [{
+    _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
     moduleId: String,
     moduleName: String,
-    moduleOrder: Number
+    moduleOrder: Number,
+    videos: [{
+      _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
+      videoId: String,
+      videoName: String,
+      videoUrl: String,
+      duration: Number,
+      order: Number
+    }]
   }],
   duration: {
     type: Number, // in days
@@ -45,7 +54,15 @@ const trainingSchema = new mongoose.Schema({
       enum: ['pending', 'in_progress', 'completed'],
       default: 'pending'
     },
-    completedDate: Date
+    completedDate: Date,
+    completedVideos: [{
+      moduleId: String,
+      videoId: String,
+      completedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }]
   }],
   targetCriteria: {
     branches: [String],

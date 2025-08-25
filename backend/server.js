@@ -113,6 +113,9 @@ app.get('/api/health', (req, res) => {
 // Training routes - This includes all the missing GET endpoints
 app.use('/api/trainings', trainingRoutes);
 
+// Video completion endpoint (for external API compatibility)
+app.patch('/api/user/update/trainingprocess', require('./controllers/trainingController').updateTrainingProcess);
+
 // Additional training endpoints for backward compatibility
 app.get('/api/mandatorytrainings', async (req, res) => {
   // Redirect to the new endpoint
@@ -146,7 +149,8 @@ app.use((req, res) => {
       'POST /api/trainings',
       'POST /api/trainings/mandatorytrainings',
       'PUT /api/trainings/user/:userId/training/:trainingId/progress',
-      'PUT /api/trainings/user/:userId/training/:trainingId/complete'
+      'PUT /api/trainings/user/:userId/training/:trainingId/complete',
+      'PATCH /api/user/update/trainingprocess'
     ]
   });
 });
@@ -163,6 +167,7 @@ app.listen(PORT, () => {
   console.log(`   GET /api/trainings/user/:userId/mandatory-trainings`);
   console.log(`   POST /api/trainings`);
   console.log(`   POST /api/trainings/mandatorytrainings`);
+  console.log(`   PATCH /api/user/update/trainingprocess`);
 });
 
 module.exports = app;

@@ -353,3 +353,120 @@ exports.completeTraining = async (req, res) => {
     });
   }
 };
+
+// Update training progress for video completion (PATCH endpoint)
+exports.updateTrainingProcess = async (req, res) => {
+  try {
+    const { userId, trainingId, moduleId, videoId } = req.query;
+
+    console.log('📹 Video completion request:', { userId, trainingId, moduleId, videoId });
+
+    if (!userId || !trainingId || !moduleId || !videoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required parameters: userId, trainingId, moduleId, or videoId'
+      });
+    }
+
+    const training = await Training.findById(trainingId);
+    if (!training) {
+      return res.status(404).json({
+        success: false,
+        message: 'Training not found for this user and training'
+      });
+    }
+
+    // Find the user's progress in this training
+    const userIndex = training.assignedUsers.findIndex(
+      user => user.userId === userId
+    );
+
+    if (userIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Training progress not found for this user and training'
+      });
+    }
+
+    // Find the module and mark the video as completed
+    const module = training.modules.find(mod => mod._id.toString() === moduleId);
+    if (!module) {
+      return res.status(404).json({
+        success: false,
+        message: 'Module not found in this training'
+      });
+    }
+
+    // Find the video in the module
+    const video = module.videos?.find(vid => vid._id.toString() === videoId);
+    if (!video) {
+      return res.status(404).json({
+        success: false,
+        message: 'Video not found in this module'
+      });
+    }
+
+    // Mark video as completed for this user
+    // If there's no completion tracking array, create it
+    if (!training.assignedUsers[userIndex].completedVideos) {
+      training.assignedUsers[userIndex].completedVideos = [];
+    }
+
+    // Add this video to completed videos if not already there
+    const videoAlreadyCompleted = training.assignedUsers[userIndex].completedVideos.some(
+      cv => cv.moduleId === moduleId && cv.videoId === videoId
+    );
+
+    if (!videoAlreadyCompleted) {
+      training.assignedUsers[userIndex].completedVideos.push({
+        moduleId,
+        videoId,
+        completedAt: new Date()
+      });
+    }
+
+    // Calculate progress based on completed videos
+    const totalVideos = training.modules.reduce((total, mod) => {
+      return total + (mod.videos ? mod.videos.length : 0);
+    }, 0);
+
+    const completedVideosCount = training.assignedUsers[userIndex].completedVideos?.length || 0;
+    const progressPercentage = totalVideos > 0 ? Math.round((completedVideosCount / totalVideos) * 100) : 0;
+
+    // Update progress
+    training.assignedUsers[userIndex].progress = progressPercentage;
+    
+    // Update status based on progress
+    if (progressPercentage >= 100) {
+      training.assignedUsers[userIndex].status = 'completed';
+      training.assignedUsers[userIndex].completedDate = new Date();
+    } else if (progressPercentage > 0) {
+      training.assignedUsers[userIndex].status = 'in_progress';
+    }
+
+    await training.save();
+
+    res.json({
+      success: true,
+      message: 'Video marked as completed successfully',
+      data: {
+        userId,
+        trainingId,
+        moduleId,
+        videoId,
+        progress: progressPercentage,
+        status: training.assignedUsers[userIndex].status,
+        completedVideos: completedVideosCount,
+        totalVideos
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating training process:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update training progress',
+      error: error.message
+    });
+  }
+};

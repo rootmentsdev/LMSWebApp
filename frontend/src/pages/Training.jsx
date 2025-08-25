@@ -49,7 +49,7 @@
 //   const [selectedVideo, setSelectedVideo] = useState(null);
 //   const [showVideoModal, setShowVideoModal] = useState(false);
 //   const [userProgress, setUserProgress] = useState({});
-//   const [currentUserId] = useState('user123');
+//   const [currentUserId, setCurrentUserId] = useState(null);
 //   const [inlineVideo, setInlineVideo] = useState(null);
 //   const [selectedTraining, setSelectedTraining] = useState(null);
 //   const [showModulesView, setShowModulesView] = useState(false);
@@ -1842,8 +1842,8 @@ import {
   JournalText,
   ArrowLeft
 } from 'react-bootstrap-icons';
-import { 
-  getUserAssignedTrainings, 
+import {
+  getUserAssignedTrainings,
   getUserMandatoryTrainings,
   testAPIConnection,
   updateTrainingProgress,
@@ -1852,7 +1852,9 @@ import {
   transformTrainingData,
   getTrainingWithModules,
   testModuleEndpoint,
-  getModuleVideoUrls
+  getModuleVideoUrls,
+  updateTrainingProgressExternal,
+  testExternalAPIConnection
 } from '../api';
 import VideoPlayer from '../components/VideoPlayer';
 
@@ -1869,7 +1871,7 @@ const Training = () => {
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [userProgress, setUserProgress] = useState({});
-  const [currentUserId] = useState('user123');
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [inlineVideo, setInlineVideo] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [showModulesView, setShowModulesView] = useState(false);
@@ -2037,6 +2039,37 @@ const Training = () => {
       const filteredAssigned = filterTrainingsByEmployee(transformedAssignedData);
       const filteredMandatory = filterTrainingsByEmployee(transformedMandatoryData);
       
+      // Automatically extract user ID from training data
+      if (filteredAssigned.length > 0 || filteredMandatory.length > 0) {
+        const firstTraining = filteredAssigned[0] || filteredMandatory[0];
+        if (firstTraining && firstTraining.userId) {
+          setCurrentUserId(firstTraining.userId);
+          console.log('🔍 Auto-extracted user ID:', firstTraining.userId);
+        } else if (firstTraining && firstTraining.assignedFor && firstTraining.assignedFor.length > 0) {
+          // Try to get user ID from assignedFor array
+          const userId = firstTraining.assignedFor.find(id => 
+            typeof id === 'string' && id.length === 24 && /^[0-9a-fA-F]{24}$/.test(id)
+          );
+          if (userId) {
+            setCurrentUserId(userId);
+            console.log('🔍 Auto-extracted user ID from assignedFor:', userId);
+          }
+        }
+      }
+      
+      // Fallback: Extract user ID from JWT token if available
+      if (!currentUserId && config.API_TOKEN) {
+        try {
+          const tokenPayload = JSON.parse(atob(config.API_TOKEN.split('.')[1]));
+          if (tokenPayload.userId) {
+            setCurrentUserId(tokenPayload.userId);
+            console.log('🔍 Extracted user ID from JWT token:', tokenPayload.userId);
+          }
+        } catch (tokenError) {
+          console.log('⚠️ Could not extract user ID from JWT token');
+        }
+      }
+      
       setAssignedTrainings(filteredAssigned);
       setMandatoryTrainings(filteredMandatory);
       
@@ -2075,58 +2108,145 @@ const Training = () => {
     }
   };
 
-  const handleVideoComplete = (video, moduleIndex, videoIndex) => {
+  const handleVideoComplete = async (video, moduleIndex, videoIndex) => {
     console.log('🎯 Video completed:', video, 'Module:', moduleIndex, 'Video:', videoIndex);
-    
+
     let currentTraining = null;
     if (inlineVideo && inlineVideo.trainingId) {
       currentTraining = inlineVideo.trainingId;
     } else if (selectedVideo && selectedVideo.trainingId) {
       currentTraining = selectedVideo.trainingId;
     }
-    
+
     if (currentTraining) {
       const trainingProgressKey = `training_${currentTraining}`;
       const currentTrainingProgress = userProgress[trainingProgressKey] || {};
-      
+
       const newTrainingProgress = {
         ...currentTrainingProgress,
         completedVideos: [...(currentTrainingProgress.completedVideos || []), video._id],
         lastCompletedVideo: video._id,
         lastCompletedAt: new Date().toISOString()
       };
-      
-      const training = [...assignedTrainings, ...mandatoryTrainings].find(t => 
+
+      const training = [...assignedTrainings, ...mandatoryTrainings].find(t =>
         (t._id || t.id) === currentTraining
       );
-      
+
       if (training && training.moduleDetails) {
-        const totalVideos = training.moduleDetails.reduce((total, module) => 
+        const totalVideos = training.moduleDetails.reduce((total, module) =>
           total + (module.videos ? module.videos.length : 0), 0
         );
-        
+
         if (newTrainingProgress.completedVideos.length >= totalVideos) {
           newTrainingProgress.trainingCompleted = true;
           newTrainingProgress.completedAt = new Date().toISOString();
           console.log('🎉 Training completed:', training.title);
         }
       }
-      
+
       const newProgress = {
         ...userProgress,
         [trainingProgressKey]: newTrainingProgress,
         lastCompletedVideo: video._id,
         lastCompletedAt: new Date().toISOString()
       };
-      
+
       setUserProgress(newProgress);
       localStorage.setItem(`userProgress_${currentUserId}`, JSON.stringify(newProgress));
-      
+
+      // Call external API to update training progress
+      try {
+        // Automatically extract all required IDs from training data
+        let moduleId = null;
+        let actualTrainingId = null;
+        let actualUserId = currentUserId;
+
+        // Get training ID (use the actual training ID from the data)
+        if (training && training._id) {
+          actualTrainingId = training._id;
+        } else if (training && training.id) {
+          actualTrainingId = training.id;
+        } else {
+          actualTrainingId = currentTraining;
+        }
+
+        // Get module ID from training data
+        if (training && training.moduleDetails && training.moduleDetails[moduleIndex]) {
+          moduleId = training.moduleDetails[moduleIndex]._id || training.moduleDetails[moduleIndex].id;
+        }
+
+        // Fallback: try to get moduleId from video data
+        if (!moduleId && video.moduleId) {
+          moduleId = video.moduleId;
+        }
+
+        // Get user ID from training data if available
+        if (training && training.userId) {
+          actualUserId = training.userId;
+        }
+
+        if (moduleId && actualTrainingId && actualUserId) {
+          console.log('📡 Calling external API with automatically extracted IDs:', {
+            userId: actualUserId,
+            trainingId: actualTrainingId,
+            moduleId: moduleId,
+            videoId: video._id
+          });
+
+          const apiResponse = await updateTrainingProgressExternal(
+            actualUserId,
+            actualTrainingId,
+            moduleId,
+            video._id
+          );
+
+          console.log('✅ External API call successful');
+          
+          // Show success alert with API response message
+          if (apiResponse && apiResponse.message) {
+            alert(`🎉 ${apiResponse.message}\n\n✅ Video completed successfully!\n📡 Progress synced with external system.`);
+          } else {
+            alert(`🎉 Video completed successfully!\n📡 Progress synced with external system.`);
+          }
+          
+        } else {
+          console.warn('⚠️ Could not determine all required IDs for external API call:', {
+            userId: actualUserId,
+            trainingId: actualTrainingId,
+            moduleId: moduleId,
+            videoId: video._id
+          });
+          alert('🎉 Video completed locally! (Could not sync with external system - missing required IDs)');
+        }
+      } catch (error) {
+        console.error('❌ External API call failed:', error);
+        
+        // Provide more specific error messages based on the error type
+        let errorMessage = 'External sync failed';
+        if (error.message.includes('not found')) {
+          errorMessage = 'External API endpoint not found - please check server configuration';
+        } else if (error.message.includes('Authentication failed')) {
+          errorMessage = 'Authentication failed - please check API token';
+        } else if (error.message.includes('Missing required parameters')) {
+          errorMessage = 'Missing required parameters for API call';
+        } else if (error.message.includes('CORS issue')) {
+          errorMessage = 'CORS or network issue - external API may not allow requests from this domain';
+        } else if (error.message.includes('Network error')) {
+          errorMessage = 'Network error - please check internet connection and external API availability';
+        } else {
+          errorMessage = `External sync failed: ${error.message}`;
+        }
+        
+        // Don't block the local completion flow if external API fails
+        alert(`🎉 Video completed locally!\n\n⚠️ ${errorMessage}\n\nYour progress has been saved locally. Please contact your system administrator if this issue persists.`);
+      }
+
       setTimeout(() => {
         fetchUserTrainings();
       }, 100);
     }
-    
+
     alert(`🎉 Congratulations! You've completed "${video.title}"`);
     closeInlineVideo();
   };

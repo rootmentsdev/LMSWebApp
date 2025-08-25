@@ -324,11 +324,147 @@ export const completeTraining = async (trainingId) => {
     if (config.LOG_API_CALLS) {
       console.log(`✅ Marking training ${trainingId} as completed`);
     }
-    
+
     const res = await api.put(buildEndpoint(config.ENDPOINTS.COMPLETE_TRAINING, { trainingId }));
     return res.data;
   } catch (error) {
     console.error('❌ Error marking training as completed:', error);
+    throw error;
+  }
+};
+
+// Test external API connection
+export const testExternalAPIConnection = async () => {
+  try {
+    console.log('🧪 Testing external API connection...');
+    
+    // Test with dummy parameters to see if the endpoint exists
+    const externalApiUrl = `${config.EXTERNAL_API_BASE_URL}/api/user/update/trainingprocess?userId=test&trainingId=test&moduleId=test&videoId=test`;
+    
+    console.log(`🌐 Testing PATCH request to external API: ${externalApiUrl}`);
+    
+    const externalApiHeaders = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add authentication if needed for external API
+    if (config.USE_AUTH && config.API_TOKEN) {
+      externalApiHeaders['Authorization'] = `Bearer ${config.API_TOKEN}`;
+    }
+
+    // Make direct axios call to external API
+    await axios.patch(externalApiUrl, {}, {
+      headers: externalApiHeaders,
+      timeout: 10000, // 10 second timeout for testing
+    });
+    
+    console.log('✅ External API endpoint is accessible');
+    return true;
+  } catch (error) {
+    if (error.response?.status === 404) {
+      console.error('❌ External API endpoint not found (404)');
+      return false;
+    } else if (error.response?.status === 400) {
+      // If we get a 400, it means the endpoint exists but the parameters are invalid (which is expected)
+      console.log('✅ External API endpoint exists (got 400 for test parameters)');
+      return true;
+    } else if (error.code === 'ECONNABORTED' || error.message.includes('Network Error')) {
+      console.error('❌ External API connection failed - possible CORS or network issue');
+      return false;
+    } else {
+      console.error('❌ External API connection test failed:', error.response?.status || error.message);
+      return false;
+    }
+  }
+};
+
+// Debug function to test the exact URL you want to call
+export const debugExternalAPICall = async (userId, trainingId, moduleId, videoId) => {
+  const externalApiUrl = `${config.EXTERNAL_API_BASE_URL}/api/user/update/trainingprocess?userId=${userId}&trainingId=${trainingId}&moduleId=${moduleId}&videoId=${videoId}`;
+  
+  console.log('🔍 DEBUG: Full external API URL:', externalApiUrl);
+  console.log('🔍 DEBUG: External API Base URL:', config.EXTERNAL_API_BASE_URL);
+  console.log('🔍 DEBUG: Parameters:', { userId, trainingId, moduleId, videoId });
+  console.log('🔍 DEBUG: API Token:', config.API_TOKEN ? 'Present' : 'Missing');
+  
+  // Test if URL is reachable with a simple GET request first
+  try {
+    console.log('🧪 Testing URL accessibility with GET request...');
+    await axios.get(config.EXTERNAL_API_BASE_URL, { timeout: 5000 });
+    console.log('✅ Base URL is accessible');
+  } catch (error) {
+    console.error('❌ Base URL not accessible:', error.message);
+  }
+};
+
+// Update training progress on external system (PATCH API)
+// This calls an external API on a different domain/website
+export const updateTrainingProgressExternal = async (userId, trainingId, moduleId, videoId) => {
+  try {
+    if (config.LOG_API_CALLS) {
+      console.log(`📊 Updating external training progress - User: ${userId}, Training: ${trainingId}, Module: ${moduleId}, Video: ${videoId}`);
+    }
+
+    // Debug the call first
+    await debugExternalAPICall(userId, trainingId, moduleId, videoId);
+
+    // Validate required parameters
+    if (!userId || !trainingId || !moduleId || !videoId) {
+      throw new Error('Missing required parameters: userId, trainingId, moduleId, or videoId');
+    }
+
+    // Build the complete external API URL using configured external API base URL
+    const externalApiUrl = `${config.EXTERNAL_API_BASE_URL}/api/user/update/trainingprocess?userId=${userId}&trainingId=${trainingId}&moduleId=${moduleId}&videoId=${videoId}`;
+
+    console.log(`🌐 Making direct PATCH request to external API: ${externalApiUrl}`);
+
+    // Create a new axios instance specifically for external API calls
+    const externalApiHeaders = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add authentication if needed for external API
+    if (config.USE_AUTH && config.API_TOKEN) {
+      externalApiHeaders['Authorization'] = `Bearer ${config.API_TOKEN}`;
+    }
+
+    // Make direct axios call to external API (not using the local api instance)
+    const res = await axios.patch(externalApiUrl, {}, {
+      headers: externalApiHeaders,
+      timeout: 30000, // 30 second timeout
+      withCredentials: false, // Don't send cookies for cross-origin requests
+    });
+
+    if (config.LOG_API_CALLS) {
+      console.log('📡 External API response:', res.data);
+    }
+
+    return res.data;
+  } catch (error) {
+    console.error('❌ Error updating external training progress:', error);
+    console.error('❌ Error details:', {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      url: error.config?.url,
+      message: error.message
+    });
+
+    // If it's a 404, provide more helpful error message
+    if (error.response?.status === 404) {
+      throw new Error('External training progress update endpoint not found. Please verify the external API URL and endpoint.');
+    }
+
+    // If it's an authentication error
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      throw new Error('Authentication failed with external API. Please check your API token and permissions.');
+    }
+
+    // If it's a CORS error
+    if (error.code === 'ECONNABORTED' || error.message.includes('Network Error')) {
+      throw new Error('Network error or CORS issue. The external API may not allow requests from this domain.');
+    }
+
     throw error;
   }
 };

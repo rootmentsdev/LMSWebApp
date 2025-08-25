@@ -2,8 +2,11 @@
 // Updated to match your exact API structure
 
 export const config = {
-  // API Configuration
+  // API Configuration (for your current video system)
   API_BASE_URL: 'https://lms-testenv.onrender.com',
+  
+  // External API Configuration (for the training assignment system)
+  EXTERNAL_API_BASE_URL: 'http://localhost:5000',
   
   // Authentication - JWT Bearer token
   USE_AUTH: true,
@@ -34,7 +37,7 @@ export const config = {
   },
   
   // Test Configuration
-  TEST_USER_ID: 'user123', // Default test user ID
+  TEST_USER_ID: '68aab7310e17c845daa50352', // Use actual user ID from your system
   
   // Debug Configuration
   ENABLE_DEBUG: true, // Set to false in production
