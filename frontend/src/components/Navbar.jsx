@@ -96,6 +96,21 @@ const NavigationBar = () => {
               <i className="fas fa-clipboard-check me-1"></i>
               Assessment
             </Nav.Link>
+            
+            {/* Admin Link - Only show for admin users */}
+            {employeeData && (employeeData.role === 'Manager' || employeeData.role === 'Admin' || employeeData.role === 'super_admin') && (
+              <Nav.Link 
+                href="/admin" 
+                className={`fw-semibold me-3 ${isActive('/admin') ? 'text-success' : 'text-muted'}`}
+                style={{ 
+                  borderBottom: isActive('/admin') ? '2px solid #198754' : 'none',
+                  paddingBottom: '0.5rem'
+                }}
+              >
+                <i className="fas fa-cogs me-1"></i>
+                Admin
+              </Nav.Link>
+            )}
           </Nav>
           
           <div className="d-flex align-items-center">

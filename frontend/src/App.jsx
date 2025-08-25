@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Assessment from './pages/Assessment';
 import Training from './pages/Training';
 import TrainingModules from './pages/TrainingModules';
+import AdminDashboard from './pages/AdminDashboard';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -49,6 +50,16 @@ function App() {
             <Route path="/training/:trainingId" element={
               <ProtectedRoute>
                 <TrainingModules />
+              </ProtectedRoute>
+            } />
+            <Route path="/training/:trainingId/video/:videoId" element={
+              <ProtectedRoute>
+                <TrainingModules />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin" element={
+              <ProtectedRoute>
+                <AdminDashboard />
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />

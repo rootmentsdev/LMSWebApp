@@ -16,4 +16,11 @@ router.post('/mandatorytrainings', trainingController.createMandatoryTraining);
 router.put('/user/:userId/training/:trainingId/progress', trainingController.updateTrainingProgress);
 router.put('/user/:userId/training/:trainingId/complete', trainingController.completeTraining);
 
+// POST endpoints for admin functionality
+router.post('/:trainingId/assign', trainingController.assignTraining);
+
+// GET endpoints for statistics and progress tracking
+router.get('/stats', trainingController.getTrainingStats);
+router.get('/users/:userId/progress', trainingController.getUserProgress);
+
 module.exports = router;

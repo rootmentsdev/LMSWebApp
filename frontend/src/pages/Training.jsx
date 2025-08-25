@@ -1855,6 +1855,7 @@ import {
   getModuleVideoUrls
 } from '../api';
 import VideoPlayer from '../components/VideoPlayer';
+import { markVideoCompleted, updateVideoProgress } from '../services/trainingProgressService';
 
 const Training = () => {
   const navigate = useNavigate();
@@ -1877,6 +1878,7 @@ const Training = () => {
   // UPDATED: Simplified video tracking - only track if video is fully watched
   const [videoWatchedTime, setVideoWatchedTime] = useState({});
   const [videoStartTime, setVideoStartTime] = useState({});
+  const [videoCompletionPercentage, setVideoCompletionPercentage] = useState({}); // Track completion percentage for each video
   const [videoCompleted, setVideoCompleted] = useState({}); // Track fully watched videos
   const [youtubeProgressTimer, setYoutubeProgressTimer] = useState({});
 
@@ -2075,7 +2077,47 @@ const Training = () => {
     }
   };
 
-  const handleVideoComplete = (video, moduleIndex, videoIndex) => {
+  // 🚀 NEW: Handle partial video completion (50%, 75%, etc.)
+  const handleVideoProgress = async (video, progressPercentage) => {
+    console.log(`📊 Video progress update: ${progressPercentage}% for video "${video.title}"`);
+    
+    // Track completion percentage locally
+    setVideoCompletionPercentage(prev => ({
+      ...prev,
+      [video._id || video.id]: progressPercentage
+    }));
+    
+    // Update LMS for milestone completions (25%, 50%, 75%)
+    if (progressPercentage >= 25 && progressPercentage % 25 === 0) {
+      try {
+        const employeeData = JSON.parse(localStorage.getItem('employeeData') || '{}');
+        const userId = employeeData.employeeId || currentUserId;
+        
+        const trainingId = video.trainingId || selectedTraining?._id || selectedTraining?.id;
+        const moduleId = video.moduleId || 
+                        selectedTraining?.moduleDetails?.[video.moduleIndex]?._id || 
+                        'default-module';
+        const videoId = video._id || video.id || 'default-video';
+        
+        console.log(`🎯 Updating LMS with ${progressPercentage}% progress:`, {
+          userId,
+          trainingId,
+          moduleId,
+          videoId,
+          progressPercentage
+        });
+        
+        // Use the new updateVideoProgress function to handle both partial and full progress
+        const lmsResult = await updateVideoProgress(userId, trainingId, moduleId, videoId, progressPercentage);
+        console.log(`✅ LMS updated for ${progressPercentage}% completion:`, lmsResult);
+        
+      } catch (error) {
+        console.error(`❌ Failed to update LMS for ${progressPercentage}% progress:`, error);
+      }
+    }
+  };
+
+  const handleVideoComplete = async (video, moduleIndex, videoIndex) => {
     console.log('🎯 Video completed:', video, 'Module:', moduleIndex, 'Video:', videoIndex);
     
     let currentTraining = null;
@@ -2086,6 +2128,75 @@ const Training = () => {
     }
     
     if (currentTraining) {
+      // 🚀 NEW: Update LMS API first before local storage
+      try {
+        // Get current user ID from employee data
+        const employeeData = JSON.parse(localStorage.getItem('employeeData') || '{}');
+        const userId = employeeData.employeeId || currentUserId;
+        
+        // Get the actual IDs for LMS API call
+        const trainingId = currentTraining;
+        // Try to get real IDs from the training context, fallback to safe defaults
+        const moduleId = video.moduleId || 
+                        selectedTraining?.moduleDetails?.[moduleIndex]?._id || 
+                        'default-module';
+        const videoId = video._id || video.id || 'default-video';
+        
+        console.log('🔍 ID Resolution:', {
+          originalVideo: video,
+          selectedTraining: selectedTraining?.title,
+          moduleIndex,
+          resolvedIds: { trainingId, moduleId, videoId }
+        });
+        
+        console.log('🎯 Updating LMS with video completion:', {
+          userId,
+          trainingId,
+          moduleId,
+          videoId,
+          videoTitle: video.title
+        });
+        
+        // Call LMS API to mark video as completed
+        const lmsResult = await markVideoCompleted(userId, trainingId, moduleId, videoId);
+        
+        console.log('✅ LMS API update successful:', lmsResult);
+        
+        // Show success message with LMS confirmation
+        if (lmsResult.data?.trainingProgress?.pass) {
+          alert(`🎉 Congratulations! 
+Video "${video.title}" completed!
+✅ Training "${lmsResult.data.trainingProgress.trainingName}" is now 100% complete!
+Check your LMS dashboard to see the updated progress.`);
+        } else {
+          alert(`✅ Video "${video.title}" completed!
+Progress has been saved to your LMS system.
+Check your training dashboard for updated completion status.`);
+        }
+        
+      } catch (error) {
+        console.error('❌ Failed to update LMS:', error);
+        console.error('❌ Full error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+          originalError: error.originalError,
+          context: error.context,
+          userId,
+          trainingId,
+          moduleId,
+          videoId,
+          videoTitle: video.title
+        });
+        
+        alert(`⚠️ Video completed locally, but failed to sync with LMS.
+Please check your internet connection and try again.
+Error: ${error.message}
+
+Check browser console for detailed error information.`);
+      }
+      
+      // Update local storage (existing logic)
       const trainingProgressKey = `training_${currentTraining}`;
       const currentTrainingProgress = userProgress[trainingProgressKey] || {};
       
@@ -2122,12 +2233,12 @@ const Training = () => {
       setUserProgress(newProgress);
       localStorage.setItem(`userProgress_${currentUserId}`, JSON.stringify(newProgress));
       
+      // Refresh training data to show updated progress
       setTimeout(() => {
         fetchUserTrainings();
-      }, 100);
+      }, 1000);
     }
     
-    alert(`🎉 Congratulations! You've completed "${video.title}"`);
     closeInlineVideo();
   };
 
@@ -2154,7 +2265,10 @@ const Training = () => {
       ...video,
       moduleIndex,
       videoIndex,
-      trainingId: selectedTraining?._id || selectedTraining?.id
+      trainingId: selectedTraining?._id || selectedTraining?.id,
+      // Ensure we have the proper IDs for LMS integration
+      moduleId: video.moduleId || selectedTraining?.moduleDetails?.[moduleIndex]?._id || 'default-module',
+      videoId: video._id || video.id || 'default-video'
     });
   };
 
@@ -3175,6 +3289,7 @@ const Training = () => {
         onHide={() => setShowVideoModal(false)}
         video={selectedVideo}
         onVideoComplete={handleVideoComplete}
+        onVideoProgress={handleVideoProgress}
       />
     </div>
   );

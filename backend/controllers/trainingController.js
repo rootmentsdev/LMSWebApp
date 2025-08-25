@@ -353,3 +353,184 @@ exports.completeTraining = async (req, res) => {
     });
   }
 };
+
+// Assign training to users (POST /api/trainings/:trainingId/assign)
+exports.assignTraining = async (req, res) => {
+  try {
+    const { trainingId } = req.params;
+    const { userId, userName, userRole, userBranch, deadline, priority } = req.body;
+
+    if (!trainingId || !userId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Training ID and User ID are required'
+      });
+    }
+
+    const training = await Training.findById(trainingId);
+    if (!training) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Training not found'
+      });
+    }
+
+    // Check if user is already assigned
+    const existingUserIndex = training.assignedUsers.findIndex(
+      user => user.userId === userId
+    );
+
+    if (existingUserIndex !== -1) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'User is already assigned to this training'
+      });
+    }
+
+    // Add user to assigned users
+    const newAssignment = {
+      userId,
+      userName: userName || userId,
+      userRole: userRole || 'Employee',
+      userBranch: userBranch || 'Unknown',
+      assignedDate: new Date(),
+      deadline: deadline ? new Date(deadline) : null,
+      progress: 0,
+      status: 'pending',
+      moduleProgress: training.modules.map(module => ({
+        moduleId: module.moduleId,
+        moduleName: module.moduleName,
+        progress: 0,
+        status: 'pending',
+        videos: [],
+        lastUpdated: new Date()
+      }))
+    };
+
+    training.assignedUsers.push(newAssignment);
+    await training.save();
+
+    res.json({
+      status: 'success',
+      message: 'Training assigned successfully',
+      data: {
+        trainingId,
+        userId,
+        assignment: newAssignment
+      }
+    });
+  } catch (error) {
+    console.error('Error assigning training:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to assign training',
+      error: error.message
+    });
+  }
+};
+
+// Get training assignment statistics (GET /api/trainings/stats)
+exports.getTrainingStats = async (req, res) => {
+  try {
+    const trainings = await Training.find({ isActive: true });
+    
+    const stats = {
+      totalTrainings: trainings.length,
+      mandatoryTrainings: trainings.filter(t => t.type === 'mandatory').length,
+      totalAssignments: 0,
+      completedAssignments: 0,
+      inProgressAssignments: 0,
+      pendingAssignments: 0,
+      overallCompletionRate: 0
+    };
+
+    trainings.forEach(training => {
+      if (training.assignedUsers && training.assignedUsers.length > 0) {
+        stats.totalAssignments += training.assignedUsers.length;
+        stats.completedAssignments += training.assignedUsers.filter(u => u.status === 'completed').length;
+        stats.inProgressAssignments += training.assignedUsers.filter(u => u.status === 'in_progress').length;
+        stats.pendingAssignments += training.assignedUsers.filter(u => u.status === 'pending').length;
+      }
+    });
+
+    if (stats.totalAssignments > 0) {
+      stats.overallCompletionRate = Math.round((stats.completedAssignments / stats.totalAssignments) * 100);
+    }
+
+    res.json({
+      status: 'success',
+      data: stats
+    });
+  } catch (error) {
+    console.error('Error fetching training stats:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch training statistics',
+      error: error.message
+    });
+  }
+};
+
+// Get user progress across all trainings (GET /api/users/:userId/progress)
+exports.getUserProgress = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'User ID is required'
+      });
+    }
+
+    const trainings = await Training.find({
+      'assignedUsers.userId': userId,
+      isActive: true
+    });
+
+    const userProgress = trainings.map(training => {
+      const userAssignment = training.assignedUsers.find(
+        user => user.userId === userId
+      );
+
+      return {
+        trainingId: training._id,
+        title: training.title,
+        type: training.type,
+        progress: userAssignment?.progress || 0,
+        status: userAssignment?.status || 'pending',
+        assignedDate: userAssignment?.assignedDate,
+        deadline: userAssignment?.deadline,
+        completedDate: userAssignment?.completedDate,
+        moduleProgress: userAssignment?.moduleProgress || []
+      };
+    });
+
+    const totalAssigned = userProgress.length;
+    const completed = userProgress.filter(p => p.status === 'completed').length;
+    const inProgress = userProgress.filter(p => p.status === 'in_progress').length;
+    const pending = userProgress.filter(p => p.status === 'pending').length;
+
+    res.json({
+      status: 'success',
+      data: {
+        userId,
+        summary: {
+          totalAssigned,
+          completed,
+          inProgress,
+          pending,
+          completionRate: totalAssigned > 0 ? Math.round((completed / totalAssigned) * 100) : 0
+        },
+        trainings: userProgress
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user progress:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch user progress',
+      error: error.message
+    });
+  }
+};

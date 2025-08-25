@@ -4,17 +4,90 @@
 import { config, getApiHeaders } from '../config';
 
 // Mark video as completed in your external LMS
-export const markVideoCompleted = async (userId, trainingId, moduleId, videoId) => {
+export const markVideoCompleted = async (userId, trainingId, moduleId, videoId, progressPercentage = 100) => {
+  console.log('🚀 markVideoCompleted called with parameters:', {
+    userId: userId || 'UNDEFINED',
+    trainingId: trainingId || 'UNDEFINED', 
+    moduleId: moduleId || 'UNDEFINED',
+    videoId: videoId || 'UNDEFINED',
+    progressPercentage,
+    types: {
+      userId: typeof userId,
+      trainingId: typeof trainingId,
+      moduleId: typeof moduleId,
+      videoId: typeof videoId
+    }
+  });
+
+  // Basic parameter validation
+  if (!userId) {
+    throw new Error('userId is required but was not provided');
+  }
+  if (!trainingId) {
+    throw new Error('trainingId is required but was not provided');
+  }
+
   try {
     console.log('🎬 Marking video as completed in LMS:', {
       userId,
       trainingId,
       moduleId,
-      videoId
+      videoId,
+      progressPercentage
     });
 
+    // 🚀 STEP 1: First, get the training data to validate and get correct IDs
+    console.log('📋 Step 1: Validating training data and IDs...');
+    const trainingDataUrl = `${config.API_BASE_URL}/api/user/getAll/trainingprocess?userId=${userId}&trainingId=${trainingId}`;
+    
+    const trainingResponse = await fetch(trainingDataUrl, {
+      method: 'GET',
+      headers: getApiHeaders()
+    });
+
+    if (!trainingResponse.ok) {
+      throw new Error(`Failed to get training data: ${trainingResponse.status} - ${trainingResponse.statusText}`);
+    }
+
+    const trainingData = await trainingResponse.json();
+    console.log('📋 Training data retrieved:', trainingData);
+
+    // 🚀 STEP 2: Extract correct moduleId and videoId from training data
+    let validModuleId = moduleId;
+    let validVideoId = videoId;
+
+    if (trainingData.data && trainingData.data.trainingId && trainingData.data.trainingId.modules) {
+      const modules = trainingData.data.trainingId.modules;
+      console.log(`📚 Found ${modules.length} modules in training`);
+      
+      if (modules.length > 0) {
+        // For now, use the first module and first video as fallback
+        const firstModule = modules[0];
+        if (firstModule.videos && firstModule.videos.length > 0) {
+          const firstVideo = firstModule.videos[0];
+          
+          // Use provided IDs if they exist in the training, otherwise use first available
+          const moduleExists = modules.find(m => m._id === moduleId);
+          const videoExists = firstModule.videos.find(v => v._id === videoId);
+          
+          if (!moduleExists) {
+            validModuleId = firstModule._id;
+            console.log(`⚠️ Module ID ${moduleId} not found, using: ${validModuleId}`);
+          }
+          
+          if (!videoExists) {
+            validVideoId = firstVideo._id;
+            console.log(`⚠️ Video ID ${videoId} not found, using: ${validVideoId}`);
+          }
+          
+          console.log('✅ Final IDs to use:', { validModuleId, validVideoId });
+        }
+      }
+    }
+
     // Build the exact URL as per your LMS spec
-    const url = `${config.API_BASE_URL}/api/user/update/trainingprocess?userId=${userId}&trainingId=${trainingId}&moduleId=${moduleId}&videoId=${videoId}`;
+    const url = `${config.API_BASE_URL}/api/user/update/trainingprocess?userId=${userId}&trainingId=${trainingId}&moduleId=${validModuleId}&videoId=${validVideoId}`;
+    console.log('🌐 Final API URL:', url);
 
     const response = await fetch(url, {
       method: 'PATCH',
@@ -23,7 +96,31 @@ export const markVideoCompleted = async (userId, trainingId, moduleId, videoId) 
     });
 
     if (!response.ok) {
-      throw new Error(`LMS API error: ${response.status} - ${response.statusText}`);
+      // Get more detailed error information
+      let errorMessage = `LMS API error: ${response.status} - ${response.statusText}`;
+      try {
+        const errorBody = await response.text();
+        if (errorBody) {
+          console.error('❌ LMS API Error Response:', errorBody);
+          errorMessage += `\nResponse: ${errorBody}`;
+        }
+      } catch (e) {
+        console.error('❌ Could not read error response body:', e);
+      }
+      
+      console.error('❌ Failed API Call Details:', {
+        url,
+        method: 'PATCH',
+        headers: getApiHeaders(),
+        userId,
+        trainingId,
+        moduleId,
+        videoId,
+        status: response.status,
+        statusText: response.statusText
+      });
+      
+      throw new Error(errorMessage);
     }
 
     const result = await response.json();
@@ -43,7 +140,23 @@ export const markVideoCompleted = async (userId, trainingId, moduleId, videoId) 
     return result;
   } catch (error) {
     console.error('❌ Error marking video as completed:', error);
-    throw error;
+    console.error('❌ Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      userId,
+      trainingId,
+      moduleId,
+      videoId,
+      progressPercentage
+    });
+    
+    // Create a more descriptive error
+    const detailedError = new Error(`Failed to mark video as completed: ${error.message}`);
+    detailedError.originalError = error;
+    detailedError.context = { userId, trainingId, moduleId, videoId, progressPercentage };
+    
+    throw detailedError;
   }
 };
 
@@ -210,9 +323,40 @@ export const trackVideoProgress = async (videoData) => {
   }
 };
 
+// 🚀 NEW: Track partial video progress for milestone updates
+export const updateVideoProgress = async (userId, trainingId, moduleId, videoId, progressPercentage) => {
+  try {
+    console.log('📊 Updating video progress in LMS:', {
+      userId,
+      trainingId,
+      moduleId,
+      videoId,
+      progressPercentage
+    });
+
+    // For now, we'll only call the full completion API when progress >= 90%
+    // This can be enhanced if your LMS supports partial progress tracking
+    if (progressPercentage >= 90) {
+      return await markVideoCompleted(userId, trainingId, moduleId, videoId, progressPercentage);
+    } else {
+      // Log the progress locally for now
+      console.log(`📊 Progress ${progressPercentage}% tracked locally - LMS update will happen at 90%+`);
+      return {
+        success: true,
+        progressPercentage,
+        message: `Progress ${progressPercentage}% tracked locally`
+      };
+    }
+  } catch (error) {
+    console.error('❌ Error updating video progress:', error);
+    throw error;
+  }
+};
+
 // Export all functions
 export default {
   markVideoCompleted,
+  updateVideoProgress,
   getTrainingProgress,
   isVideoCompleted,
   getTrainingCompletionPercentage,

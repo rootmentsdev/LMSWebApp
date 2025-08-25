@@ -25,7 +25,7 @@ import { config } from '../config';
 import { createProgressTracker } from '../services/realTimeProgressTracker';
 import { markVideoCompleted, trackVideoProgress } from '../services/trainingProgressService';
 
-const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
+const VideoPlayer = ({ show, onHide, video, onVideoComplete, onVideoProgress }) => {
   const [videoError, setVideoError] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -76,16 +76,24 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
       const employeeData = JSON.parse(localStorage.getItem('employeeData') || '{}');
       const userId = employeeData.employeeId || 'user123';
       
-      // Extract training ID and module ID from URL or video data
+      // Extract training ID, module ID, and video ID from URL or video data
       const urlParams = new URLSearchParams(window.location.search);
-      const trainingId = video.trainingId || urlParams.get('trainingId') || 
-                        window.location.pathname.split('/').pop() || 'default-training';
+      const pathParts = window.location.pathname.split('/');
+      
+      // Extract IDs from URL path: /training/{trainingId}/video/{videoId}
+      const trainingIdFromPath = pathParts[2] || 'default-training'; // /training/{trainingId}
+      const videoIdFromPath = pathParts[4] || null; // /training/{trainingId}/video/{videoId}
+      
+      const trainingId = video.trainingId || urlParams.get('trainingId') || trainingIdFromPath;
       const moduleId = video.moduleId || urlParams.get('moduleId') || 'default-module';
+      const videoId = video._id || video.id || videoIdFromPath || 'default-video';
       
       console.log('🎯 Initializing progress tracker:', {
         userId,
         trainingId,
-        videoTitle: video.title
+        videoId,
+        videoTitle: video.title,
+        currentURL: window.location.href
       });
 
       // Create progress tracker with module information
@@ -244,8 +252,21 @@ const VideoPlayer = ({ show, onHide, video, onVideoComplete }) => {
         progressTracker.current.trackVideoProgress(video._id || 'video', current, total);
       }
       
-      // 🚀 NEW: Auto-complete at 90% watched (better UX)
+      // 🚀 NEW: Call onVideoProgress for milestone tracking (25%, 50%, 75%, 90%)
       const watchPercentage = (current / total) * 100;
+      if (onVideoProgress && total > 0) {
+        // Call progress handler for milestone percentages
+        const milestones = [25, 50, 75, 90];
+        for (const milestone of milestones) {
+          if (watchPercentage >= milestone && !video[`milestone_${milestone}`]) {
+            video[`milestone_${milestone}`] = true; // Prevent multiple calls
+            onVideoProgress(video, milestone);
+            break; // Only call one milestone per update
+          }
+        }
+      }
+      
+      // 🚀 Auto-complete at 90% watched (better UX)
       if (watchPercentage >= 90 && !video.completed && total > 0) {
         console.log(`📊 Video ${watchPercentage.toFixed(1)}% watched - auto-completing...`);
         handleVideoComplete();
