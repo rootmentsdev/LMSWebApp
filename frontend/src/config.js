@@ -3,7 +3,7 @@
 
 export const config = {
   // API Configuration
-  API_BASE_URL: 'https://lms-testenv.onrender.com',
+  API_BASE_URL: 'https://lms-1-lavs.onrender.com',
   
   // Authentication - JWT Bearer token
   USE_AUTH: true,
