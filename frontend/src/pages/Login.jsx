@@ -18,9 +18,9 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
-      // Use local backend API instead of external API directly
+      // Use deployed backend API
       const response = await axios.post(
-        "http://localhost:5000/api/verify-employee",
+        "https://lms-1-lavs.onrender.com/api/verify-employee",
         { employeeId, password },
         {
           headers: {
